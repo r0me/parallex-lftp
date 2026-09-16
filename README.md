@@ -19,7 +19,8 @@ native `pget -n <segments>`.
   lftp has no segmented upload for a single file)
 - **Folder transfers** — select a directory and download/upload the whole
   tree recursively (`mirror`), with parallel files and live progress on
-  folder downloads
+  folder downloads, including the current file and a running file count
+  (mirror runs `--verbose`, so `docker logs` shows each file too)
 - **Live transfer queue** — per-file segment fill visualization, percent,
   speed, and ETA streamed over WebSocket
 - **File operations** — mkdir / rename / delete on both local and remote

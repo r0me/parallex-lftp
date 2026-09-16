@@ -304,6 +304,9 @@ function renderJob(job) {
     (['queued', 'running'].includes(job.status)
       ? `<button class="btn-cancel" title="Cancel">&#10005;</button>`
       : `<span class="job-status ${job.status}">${job.status.toUpperCase()}</span>`) +
+    (job.isDir && (job.currentFile || job.filesTransferred)
+      ? `<div class="job-subline">${job.filesTransferred || 0} file${job.filesTransferred === 1 ? '' : 's'}${job.currentFile ? ' · ' + escapeHtml(job.currentFile) : ''}</div>`
+      : '') +
     (job.error ? `<div class="job-error-text">${escapeHtml(job.error)}</div>` : '');
   const cancel = el.querySelector('.btn-cancel');
   if (cancel) cancel.onclick = () => api(`/transfers/${job.id}/cancel`, { method: 'POST' }).catch(() => {});

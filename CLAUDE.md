@@ -81,7 +81,12 @@ Key gotchas learned the hard way:
   destination tree (fs) for bytes/speed, and an async `du -bs` on the
   remote for the total → percent (best-effort; percent stays indeterminate
   if `du` fails). This is version-independent since it never parses
-  mirror's own output for progress.
+  mirror's own output for progress. mirror runs with `--verbose`; the
+  `Transferring file`/`Making directory` action lines drive the current-file
+  + file-count shown in the queue and are echoed to the server log. Crucial:
+  folder jobs **must ignore** mirror's per-file `got N of M (P%)` meter
+  lines for percent (they'd spike the whole-folder percent to one file's
+  progress) — only `!isDir` jobs let `PROGRESS_RE` drive percent.
 - **lftp's SFTP defaults are slow**: `sftp:size-read/write` (32K) and
   `sftp:max-packets-in-flight` (16) cap each connection at a few MB/s no
   matter the link. Both the session and transfer processes set 128K blocks

@@ -323,6 +323,13 @@ body {
 }
 .job .btn-cancel:hover { color: var(--red); }
 .job-error-text { grid-column: 2 / -1; color: var(--red); font-size: 10px; padding-bottom: 2px; }
+.job-subline {
+  grid-column: 2 / -1;
+  color: var(--text-faint);
+  font-size: 10px;
+  padding-bottom: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 
 /* ---- statusbar ---- */
 .statusbar {

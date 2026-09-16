@@ -33,6 +33,11 @@ const SEGMENT_RE = /^\\(?:chunk|transfer)\b/i;
 // pty output can carry terminal escape sequences — strip before parsing.
 const ANSI_RE = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)/g;
 
+// `mirror --verbose` action lines: `Transferring file `sub/x.mkv'`,
+// `Making directory `sub'`, `Removing old file `y'`, etc.
+const MIRROR_XFER_RE = /Transferring file `(.+?)'/;
+const MIRROR_ACTION_RE = /^(Transferring file|Making directory|mkdir|Removing old (?:file|directory)|chmod|Skipping) /i;
+
 /**
  * Runs each transfer as its own short-lived lftp process so long transfers
  * never block the interactive browsing session and each job can be killed
@@ -81,9 +86,12 @@ class TransferManager extends EventEmitter {
       finishedAt: null,
       proc: null,
       segmentProgress: null, // per-segment 0..1, from the pget status file
+      currentFile: null, // folder jobs: file mirror is currently on
+      filesTransferred: 0, // folder jobs: count of files mirror has started
       _statusTimer: null,
       _sizeTimer: null, // folder downloads: polls the local dest for progress
       _lastSample: null, // { bytes, t } for folder speed/ETA
+      _logTail: [], // folder jobs: recent verbose mirror lines (error context)
     };
     this.jobs.set(job.id, job);
     this.queue.push(job);
@@ -144,11 +152,13 @@ class TransferManager extends EventEmitter {
       // Recursive folder transfer. `mirror` walks the tree; --parallel runs
       // several files at once and (download only) --use-pget-n segments each
       // large file. -c continues a partial mirror on retry.
+      // --verbose makes mirror announce each file/dir it touches; we surface
+      // those lines (current file, running count) in the UI and server log.
       if (job.direction === 'download') {
-        xfer = `mirror -c --parallel=${par} --use-pget-n=${job.effective.segments} ${quote(job.remotePath)} ${quote(job.localPath)}`;
+        xfer = `mirror -c --verbose --parallel=${par} --use-pget-n=${job.effective.segments} ${quote(job.remotePath)} ${quote(job.localPath)}`;
       } else {
         // -R = reverse (upload); no pget on the way up
-        xfer = `mirror -R -c --parallel=${par} ${quote(job.localPath)} ${quote(job.remotePath)}`;
+        xfer = `mirror -R -c --verbose --parallel=${par} ${quote(job.localPath)} ${quote(job.remotePath)}`;
       }
     } else if (job.direction === 'download') {
       xfer =
@@ -198,6 +208,29 @@ class TransferManager extends EventEmitter {
       // Meter lines end with \r; split on both.
       for (const line of text.split(/[\r\n]+/)) {
         if (!line.trim()) continue;
+
+        if (job.isDir) {
+          // Folder percent/bytes come from du + the local-dir poll, NOT from
+          // mirror's per-file `got N of M (P%)` meters — those would spike
+          // the folder percent to a single file's progress. Only read the
+          // verbose action lines here for the "current file" display.
+          const xm = MIRROR_XFER_RE.exec(line);
+          if (xm) {
+            job.currentFile = path.basename(xm[1]);
+            job.filesTransferred++;
+          }
+          if (MIRROR_ACTION_RE.test(line.trim())) {
+            log('transfer', `[${job.id}] ${line.trim()}`);
+            job._logTail.push(line.trim());
+            if (job._logTail.length > 15) job._logTail.shift();
+            if (xm) this._broadcast(job);
+          } else if (!PROGRESS_RE.test(line) && !SEGMENT_RE.test(line)) {
+            errText += line + '\n';
+            if (errText.length > 8192) errText = errText.slice(-8192);
+          }
+          continue;
+        }
+
         const m = PROGRESS_RE.exec(line);
         if (m) {
           // monotonic: the pty meter can lag the pget status file
@@ -426,6 +459,8 @@ class TransferManager extends EventEmitter {
       percent: job.percent,
       bytes: job.bytes,
       segmentProgress: job.segmentProgress,
+      currentFile: job.currentFile,
+      filesTransferred: job.filesTransferred,
       speed: job.speed,
       eta: job.eta,
       error: job.error,
