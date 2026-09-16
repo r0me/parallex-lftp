@@ -91,6 +91,9 @@ Key gotchas learned the hard way:
 parallex-lftp/
   Dockerfile              node:20-slim + lftp + openssh-client
   docker-compose.yml      port 7609, mounts ./data -> /data, ./config -> /config
+  .github/workflows/docker.yml  pushes ghcr.io/r0me/parallex-lftp:latest (amd64+arm64) on main
+  unraid-template.xml     Unraid Docker template (GHCR image, PUID 99/PGID 100 defaults)
+  docs/icon.png           64x64 stripe-mark icon referenced by the Unraid template
   server/
     index.js              Express app, static frontend, WebSocket broadcast, HOME/.ssh setup, credential migration
     logger.js             log() + redact() helpers (credential scrubbing)
@@ -138,6 +141,10 @@ parallex-lftp/
 - mkdir / delete / rename on both local and remote panes
 - Request + connection lifecycle logging for debuggability
 - Credential redaction in all logs and error responses
+- CI image publishing: GitHub Actions pushes
+  `ghcr.io/r0me/parallex-lftp:latest` + `:sha` (amd64/arm64) on every
+  main push; `unraid-template.xml` deploys that image on Unraid (GHCR
+  package must be set public once for anonymous pulls)
 
 ## Known gaps / not yet done
 

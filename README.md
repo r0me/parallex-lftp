@@ -99,6 +99,36 @@ exactly what this repo's checked-in `docker-compose.yml` does:
       - AUTH_PASSWORD=${AUTH_PASSWORD:-}
 ```
 
+## Deploying on Unraid
+
+Unraid's Docker manager wants a prebuilt image plus a template — both are
+provided. Every push to `main` publishes
+`ghcr.io/r0me/parallex-lftp:latest` (amd64 + arm64) via GitHub Actions.
+
+**Recommended: the template**
+
+1. Unraid web UI → **Docker** tab → **Add Container** → switch on
+   advanced view and paste this into *Template URL* (or drop the file in
+   `/boot/config/plugins/dockerMan/templates-user/`):
+   ```
+   https://raw.githubusercontent.com/r0me/parallex-lftp/main/unraid-template.xml
+   ```
+2. Pick the share the LOCAL pane should browse for **/data**
+   (default `/mnt/user/downloads/`); **/config** defaults to
+   `/mnt/user/appdata/parallex-lftp/`.
+3. Defaults are Unraid-native: `PUID=99` / `PGID=100` (`nobody:users`),
+   so downloads are editable over SMB like any other share file. Set
+   `UMASK=000` or `002` if other share users need write access too.
+4. Optionally fill `PARALLEX_SECRET` (recommended) and
+   `AUTH_USERNAME`/`AUTH_PASSWORD`, or just create the account in the
+   browser on first visit. Start the container → `http://SERVER-IP:7609`.
+
+**Alternative: Compose Manager plugin** — install "Compose.Manager" from
+Community Applications, point a new stack at this repo's
+`docker-compose.yml`, and it builds the image on the box instead of
+pulling from GHCR. Works, but you lose the Docker-tab niceties (icon,
+WebUI button, update checks).
+
 ## Configuration
 
 All settings are environment variables. The easiest way to set them is a
