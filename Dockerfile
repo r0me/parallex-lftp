@@ -11,12 +11,17 @@ RUN npm install --omit=dev
 
 COPY server ./server
 COPY public ./public
+COPY entrypoint.sh ./
+RUN chmod +x entrypoint.sh
 
 ENV PORT=7609 \
     LOCAL_ROOT=/data \
-    CONFIG_DIR=/config
+    CONFIG_DIR=/config \
+    PUID=1000 \
+    PGID=1000 \
+    UMASK=022
 
 EXPOSE 7609
 VOLUME ["/data", "/config"]
 
-CMD ["node", "server/index.js"]
+ENTRYPOINT ["./entrypoint.sh"]

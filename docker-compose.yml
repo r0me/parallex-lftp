@@ -4,6 +4,12 @@ services:
     container_name: parallex-lftp
     ports:
       - "7609:7609"
+    environment:
+      # run as this uid:gid so downloads are editable on the host
+      # (find yours with `id -u` / `id -g`; override here or in a .env file)
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - UMASK=${UMASK:-022}
     volumes:
       # what the LOCAL pane browses
       - ./data:/data

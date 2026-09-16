@@ -48,6 +48,28 @@ Environment variables (already set by `docker-compose.yml` / `Dockerfile`):
 | `LOCAL_ROOT` | `/data` | Sandbox root for the LOCAL pane |
 | `CONFIG_DIR` | `/config` | Where sites/settings/known_hosts persist |
 
+## File ownership (PUID/PGID)
+
+The container drops from root to `PUID:PGID` (default `1000:1000`) before
+starting the app, so downloaded files land in `./data` owned by that
+uid/gid — editable on the host without sudo. Set them to your own user:
+
+```bash
+# find your ids
+id -u   # -> PUID
+id -g   # -> PGID
+
+# either export them, or put them in a .env file next to docker-compose.yml:
+#   PUID=1000
+#   PGID=1000
+PUID=$(id -u) PGID=$(id -g) docker compose up --build
+```
+
+`UMASK` (default `022`) controls the permission bits on newly created
+files; use `002` if a shared group should also get write access. The
+entrypoint also chowns `./config` (sites, settings, known_hosts) to
+`PUID:PGID`, but never touches ownership inside `./data`.
+
 ## SSH host keys (SFTP)
 
 There's no TTY in the container to answer lftp's interactive host-key

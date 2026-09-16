@@ -32,6 +32,7 @@ web app instead of a desktop app.
 | Site storage | JSON file (`/config/sites.json`) | Simple, human-inspectable, good enough for a single-user tool |
 | Settings storage | JSON file (`/config/settings.json`) | Same reasoning |
 | Transfer progress | WebSocket broadcast from a `TransferManager` EventEmitter | Simple pub-sub; fine for a single-user tool with no auth boundaries to worry about between clients |
+| File ownership | `entrypoint.sh` drops root to `PUID:PGID` (default 1000:1000) via `setpriv` before exec'ing node | Downloads into the mounted `./data` are editable on the host without sudo (LinuxServer.io convention). Entrypoint chowns `/config` (small) but **never recurses `/data`** (can be huge; new files are created as PUID:PGID anyway). `UMASK` env sets creation perms. `setpriv` comes with util-linux, already in debian-slim |
 
 ## lftp command wrapper details (the trickiest part)
 
