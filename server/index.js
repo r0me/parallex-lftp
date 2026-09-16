@@ -56,7 +56,11 @@ app.use('/api/local', require('./routes/local')(LOCAL_ROOT));
 app.use('/api/remote', require('./routes/remote')(sessionManager, sitesStore, settingsStore));
 app.use('/api/transfers', require('./routes/transfers')(transferManager, sitesStore, LOCAL_ROOT));
 
-app.use(express.static(path.join(__dirname, '..', 'public')));
+// no-cache = always revalidate (ETag 304s keep it cheap), so browsers
+// never serve stale CSS/JS after an image rebuild
+app.use(express.static(path.join(__dirname, '..', 'public'), {
+  setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache'),
+}));
 
 // Error handler — lftp errors carry code/detail; everything is redacted.
 // eslint-disable-next-line no-unused-vars
