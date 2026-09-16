@@ -1,6 +1,6 @@
 # parallex-lftp
-
-A FileZilla-style dual-pane file browser that runs as a web app in Docker,
+total AI slop, but it works and is free. 
+A dual-pane file browser that runs as a web app in Docker,
 using [`lftp`](https://lftp.yar.ru/) as the transfer engine. Supports
 **FTP, FTPS, and SFTP**, with real parallel segmented transfers via lftp's
 native `pget`/`pput -n <segments>`.
