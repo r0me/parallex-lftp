@@ -21,6 +21,10 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* our display rules (flex on .modal-backdrop, .pane-empty) would otherwise
+   override the UA's [hidden] { display: none } and pin them on screen */
+[hidden] { display: none !important; }
+
 html, body { height: 100%; }
 
 body {
