@@ -111,14 +111,27 @@ Unraid's Docker manager wants a prebuilt image plus a template — both are
 provided. Every push to `main` publishes
 `ghcr.io/r0me/parallex-lftp:latest` (amd64 + arm64) via GitHub Actions.
 
-**Recommended: the template**
+**Recommended: add the template repository** (so it shows up in the
+Add Container dropdown and gets update checks)
 
-1. Unraid web UI → **Docker** tab → **Add Container** → switch on
-   advanced view and paste this into *Template URL* (or drop the file in
-   `/boot/config/plugins/dockerMan/templates-user/`):
+1. Unraid web UI → **Docker** tab → toggle on advanced view (top-right) →
+   in **Template repositories**, add:
    ```
-   https://raw.githubusercontent.com/r0me/parallex-lftp/main/unraid-template.xml
+   https://github.com/r0me/parallex-lftp
    ```
+   Save. Unraid reads the `templates/` folder; "parallex-lftp" now appears
+   under **Add Container → Template**.
+
+**Or: paste the template URL directly**
+
+1. Unraid web UI → **Docker** tab → **Add Container** → advanced view →
+   paste this into *Template URL*:
+   ```
+   https://raw.githubusercontent.com/r0me/parallex-lftp/main/templates/parallex-lftp.xml
+   ```
+
+Then, either way:
+
 2. Pick the share the LOCAL pane should browse for **/data**
    (default `/mnt/user/downloads/`); **/config** defaults to
    `/mnt/user/appdata/parallex-lftp/`.

@@ -11,7 +11,7 @@
   <Overview>Dual-pane web file browser backed by lftp (FTP/FTPS/SFTP) with parallel segmented downloads (pget -n), a Site Manager, live transfer queue, single-user login, and encrypted-at-rest saved passwords. The LOCAL pane browses the mounted /data share.</Overview>
   <Category>Cloud: Downloaders: Network:FTP Tools:</Category>
   <WebUI>http://[IP]:[PORT:7609]/</WebUI>
-  <TemplateURL>https://raw.githubusercontent.com/r0me/parallex-lftp/main/unraid-template.xml</TemplateURL>
+  <TemplateURL>https://raw.githubusercontent.com/r0me/parallex-lftp/main/templates/parallex-lftp.xml</TemplateURL>
   <Icon>https://raw.githubusercontent.com/r0me/parallex-lftp/main/docs/icon.png</Icon>
   <ExtraParams/>
   <PostArgs/>
