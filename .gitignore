@@ -1,6 +1,8 @@
 node_modules/
-# runtime volumes: browsed files + plaintext site credentials/known_hosts
+# runtime volumes: browsed files + credentials/known_hosts
 data/
 config/
+# holds PARALLEX_SECRET / AUTH_PASSWORD — never commit
+.env
 *.log
 .DS_Store

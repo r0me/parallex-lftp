@@ -320,9 +320,17 @@ function parseClsOutput(out) {
   return entries;
 }
 
-// Quote a value for the lftp command line.
+// Quote a value for the lftp command line. Control characters are
+// stripped, not escaped: a newline inside a server-supplied filename would
+// otherwise terminate the command mid-line and let the remainder run as a
+// fresh lftp command (and lftp's `!` prefix executes shell commands) — a
+// command-injection vector from a hostile server.
 function quote(s) {
-  return `"${String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  return `"${String(s)
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\x00-\x1f\x7f]/g, '')
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')}"`;
 }
 
 // pwd can return the raw connection URL before a real cd; strip it down to
