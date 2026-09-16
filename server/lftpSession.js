@@ -113,17 +113,19 @@ class LftpSession extends EventEmitter {
       'set net:timeout 15',
       'set net:reconnect-interval-base 3',
       'set sftp:auto-confirm yes',
+      'set net:socket-buffer 4194304',
     ];
     if (site.protocol === 'ftps') {
       setup.push('set ftp:ssl-force yes', 'set ftp:ssl-protect-data yes');
     }
     if (site.protocol === 'sftp') {
-      // lftp's SFTP defaults (32K blocks, 16 packets in flight) cap each
-      // connection at a few MB/s; these take it to line speed
+      // Match the transfer processes: larger blocks, more packets in flight,
+      // a fast cipher with compression off (see transferManager for why).
       setup.push(
-        'set sftp:size-read 131072',
-        'set sftp:size-write 131072',
-        'set sftp:max-packets-in-flight 64'
+        'set sftp:size-read 262144',
+        'set sftp:size-write 262144',
+        'set sftp:max-packets-in-flight 128',
+        'set sftp:connect-program "ssh -a -x -o Compression=no -o Ciphers=aes128-gcm@openssh.com,chacha20-poly1305@openssh.com,aes128-ctr,aes256-ctr"'
       );
     }
     for (const cmd of setup) await this.exec(cmd);

@@ -87,10 +87,17 @@ Key gotchas learned the hard way:
   folder jobs **must ignore** mirror's per-file `got N of M (P%)` meter
   lines for percent (they'd spike the whole-folder percent to one file's
   progress) — only `!isDir` jobs let `PROGRESS_RE` drive percent.
-- **lftp's SFTP defaults are slow**: `sftp:size-read/write` (32K) and
-  `sftp:max-packets-in-flight` (16) cap each connection at a few MB/s no
-  matter the link. Both the session and transfer processes set 128K blocks
-  and 64 packets in flight, which takes SFTP to line speed.
+- **lftp's defaults leave throughput on the table.** Per-connection ceiling
+  levers, set on both the session and transfer processes: `net:socket-buffer
+  4194304` (big TCP window → one connection can fill a high bandwidth-delay
+  link; default 0 = tiny), and for SFTP `sftp:size-read/write 262144` (vs
+  32K default), `sftp:max-packets-in-flight 128` (vs 16), plus a pinned fast
+  cipher via `sftp:connect-program "ssh … -o Compression=no -o
+  Ciphers=aes128-gcm@openssh.com,chacha20-poly1305@openssh.com,aes128-ctr,
+  aes256-ctr"` — the SSH cipher is usually the SFTP CPU bottleneck; the list
+  degrades to widely-supported ctr. Host-level knobs (`net.core.rmem_max`,
+  BBR) matter too but an unprivileged container can't set sysctls — document
+  as a host tweak, don't fake it.
 - Real per-segment progress comes from the **`<file>.lftp-pget-status`**
   file pget writes beside the download (`pget:save-status 2` makes it
   refresh every 2s): `size=` plus `N.pos=`/`N.limit=` per chunk, chunks
@@ -112,6 +119,7 @@ parallex-lftp/
     index.js              Express app, static frontend, WebSocket broadcast, HOME/.ssh setup, credential migration
     logger.js             log() + redact() helpers (credential scrubbing)
     secretStore.js        AES-256-GCM credential encryption at rest (env secret or keyfile) + session signing key
+    perfModel.js          Adaptive pget -n learner (per-site/size bandit -> /config/perf.json)
     auth.js               Single-user auth: scrypt user store, signed-cookie sessions, requireAuth, /api/auth routes
     lftpSession.js        Persistent lftp session wrapper (sentinel protocol, error detection)
     sessionManager.js     Tracks active LftpSession instances by session id
@@ -141,11 +149,14 @@ parallex-lftp/
   threads/segments override). Passwords are never echoed back to the
   client (`hasPassword` flag instead; empty password on edit = keep stored)
 - Global Settings: thread count, segments-per-file, minimum file size
-  before segmenting kicks in, optional bandwidth cap. **Auto-segments**
-  (default on) picks `pget -n` per file size instead of the fixed value —
-  `autoSegmentsForSize` in `transferManager.js`: <512MB→6, <2GB→8, <8GB→12,
-  ≥8GB→16. A per-site or per-transfer `segments` override, or turning auto
-  off, forces the fixed count; files below `segmentMinBytes` never segment
+  before segmenting kicks in, optional bandwidth cap. **Adaptive segments**
+  (default on) *learns* the fastest `pget -n` per site instead of guessing:
+  a per-(site, size-bucket) multi-armed bandit (`server/perfModel.js`,
+  persisted to `/config/perf.json`) explores a few candidate connection
+  counts, measures achieved MB/s, and converges on the best (EMA reward,
+  ε-greedy). The static `autoSegmentsForSize` curve is only the cold-start
+  prior. A per-site/per-transfer `segments` override or turning adaptive off
+  forces a fixed count; files below `segmentMinBytes` never segment
 - Themes: Rack Amber (default), Retro Green (black/green phosphor), Deep
   Blue — picker in Settings; choice persists in `settings.json` and is
   mirrored to `localStorage` so the page paints right pre-auth. Themes are

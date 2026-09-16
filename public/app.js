@@ -333,7 +333,7 @@ function renderJob(job) {
   el.innerHTML =
     `<span class="dir-arrow">${arrow}${job.isDir ? '&#128193;' : ''}</span>` +
     `<span class="job-name" title="${escapeHtml(job.remotePath)}">${nameLabel}</span>` +
-    `<div class="segbar">${segHtml}</div>` +
+    `<div class="segbar" title="${job.autoSegments ? `adaptive: ${segs} connection${segs === 1 ? '' : 's'}${job.explore ? ' (trying a new value)' : ''}` : `${segs} connection${segs === 1 ? '' : 's'}`}">${segHtml}</div>` +
     `<span class="job-pct">${pct}</span>` +
     `<span class="job-speed">${job.speed || ''}</span>` +
     `<span class="job-eta">${job.eta ? 'eta ' + job.eta : ''}</span>` +

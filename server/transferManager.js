@@ -7,6 +7,7 @@ const path = require('path');
 const { EventEmitter } = require('events');
 const { quote } = require('./lftpSession');
 const { log, redact } = require('./logger');
+const perfModel = require('./perfModel');
 
 // lftp only renders its progress meter when stdout is a terminal — with
 // piped stdio it prints nothing at all, so progress stays blank. Run each
@@ -66,14 +67,20 @@ class TransferManager extends EventEmitter {
     // explicit choice and always wins over auto.
     const explicitOverride = settings.segments || site.segments;
     const autoOn = global.autoSegments !== false && !explicitOverride;
-    const segmentsForFile = autoOn
-      ? autoSegmentsForSize(size)
-      : effective.segments;
+    // Auto mode asks the adaptive learner for a connection count, seeded by
+    // the static size curve until it has measured data for this site/size.
+    let pick = { n: effective.segments, explore: false, reason: 'fixed' };
+    if (autoOn && direction === 'download' && !isDir) {
+      pick = perfModel.pickN(site.id, size, autoSegmentsForSize(size));
+    }
+    const segmentsForFile = pick.n;
     const job = {
       id: crypto.randomUUID(),
       direction, // 'download' | 'upload'
       isDir, // folder transfer via `mirror` instead of a single-file get/put
       autoSegments: autoOn,
+      explore: autoOn ? pick.explore : false, // learner is trying a new n
+      siteId: site.id, // for perfModel.record on completion
       site: { name: site.name, host: site.host, port: site.port, protocol: site.protocol },
       _site: site, // full site incl. credentials; never serialized
       remotePath,
@@ -139,17 +146,23 @@ class TransferManager extends EventEmitter {
       'set xfer:eta-period 3',
       // frequent pget status-file writes drive the per-segment progress UI
       'set pget:save-status 2',
+      // large socket buffer = bigger TCP window, so each connection can fill
+      // a high bandwidth-delay-product link instead of starving on window
+      'set net:socket-buffer 4194304',
     ];
     if (site.protocol === 'ftps') {
       settingsCmds.push('set ftp:ssl-force yes', 'set ftp:ssl-protect-data yes');
     }
     if (site.protocol === 'sftp') {
       // lftp's SFTP defaults (32K blocks, 16 packets in flight) cap each
-      // connection at a few MB/s; these take it to line speed
+      // connection at a few MB/s; larger blocks + more in-flight packets and
+      // a fast, AES-NI-friendly cipher (compression off) take it to line
+      // speed. The cipher list degrades gracefully to widely-supported ctr.
       settingsCmds.push(
-        'set sftp:size-read 131072',
-        'set sftp:size-write 131072',
-        'set sftp:max-packets-in-flight 64'
+        'set sftp:size-read 262144',
+        'set sftp:size-write 262144',
+        'set sftp:max-packets-in-flight 128',
+        'set sftp:connect-program "ssh -a -x -o Compression=no -o Ciphers=aes128-gcm@openssh.com,chacha20-poly1305@openssh.com,aes128-ctr,aes256-ctr"'
       );
     }
     if (job.effective.bandwidthLimitKBps > 0) {
@@ -292,6 +305,12 @@ class TransferManager extends EventEmitter {
       } else if (code === 0) {
         job.status = 'done';
         job.percent = 100;
+        // Feed the adaptive learner: measured MB/s for this (site, size, n).
+        // Only segmented single-file downloads carry a meaningful signal.
+        if (job.autoSegments && !job.isDir && job.direction === 'download' && job.segments > 1) {
+          const seconds = (job.finishedAt - job.startedAt) / 1000;
+          perfModel.record(job.siteId, job.size, job.segments, job.size || job.bytes, seconds);
+        }
       } else {
         job.status = 'error';
         job.error = redact(errText.trim().split('\n').slice(-3).join(' ')) || `lftp exited with code ${code}`;
@@ -466,6 +485,7 @@ class TransferManager extends EventEmitter {
       size: job.size,
       segments: job.segments,
       autoSegments: job.autoSegments,
+      explore: job.explore,
       status: job.status,
       percent: job.percent,
       bytes: job.bytes,

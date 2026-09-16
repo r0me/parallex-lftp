@@ -150,7 +150,7 @@
           </select>
         </label>
         <label>Concurrent transfers (threads)<input id="st-threads" type="number" min="1" max="16"></label>
-        <label class="row-inline"><input id="st-autoseg" type="checkbox"> Auto-pick segments per file size (6 → 16 as files grow)</label>
+        <label class="row-inline"><input id="st-autoseg" type="checkbox"> Adaptive segments — learn the fastest count per site (recommended)</label>
         <label>Segments per file (pget -n, downloads only)<input id="st-segments" type="number" min="1" max="16"></label>
         <label>Min file size to segment (MB)<input id="st-segmentMin" type="number" min="0" step="0.5"></label>
         <label>Bandwidth cap (KB/s, 0 = unlimited)<input id="st-bandwidth" type="number" min="0"></label>
