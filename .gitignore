@@ -1,0 +1,6 @@
+node_modules/
+# runtime volumes: browsed files + plaintext site credentials/known_hosts
+data/
+config/
+*.log
+.DS_Store

@@ -1,0 +1,12 @@
+services:
+  parallex-lftp:
+    build: .
+    container_name: parallex-lftp
+    ports:
+      - "7609:7609"
+    volumes:
+      # what the LOCAL pane browses
+      - ./data:/data
+      # sites.json, settings.json, and the SSH known_hosts store persist here
+      - ./config:/config
+    restart: unless-stopped

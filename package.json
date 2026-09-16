@@ -1,0 +1,14 @@
+{
+  "name": "parallex-lftp",
+  "version": "0.1.0",
+  "description": "FileZilla-style dual-pane web file browser backed by lftp (FTP/FTPS/SFTP) with segmented parallel transfers",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.19.2",
+    "ws": "^8.18.0"
+  }
+}
