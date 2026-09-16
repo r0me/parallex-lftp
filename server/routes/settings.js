@@ -16,11 +16,14 @@ module.exports = function settingsRouter(store) {
     const theme = body.theme ?? current.theme;
     const next = {
       theme: ['amber', 'green', 'blue'].includes(theme) ? theme : 'amber',
+      // auto-pick pget -n per file size; when off, the fixed `segments` is used
+      autoSegments: body.autoSegments ?? current.autoSegments ?? true,
       threads: clamp(body.threads ?? current.threads, 1, 16),
       segments: clamp(body.segments ?? current.segments, 1, 16),
       segmentMinBytes: Math.max(0, Number(body.segmentMinBytes ?? current.segmentMinBytes) || 0),
       bandwidthLimitKBps: Math.max(0, Number(body.bandwidthLimitKBps ?? current.bandwidthLimitKBps) || 0),
     };
+    next.autoSegments = Boolean(next.autoSegments);
     store.write(next);
     res.json(next);
   });

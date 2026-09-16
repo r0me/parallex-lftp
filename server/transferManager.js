@@ -60,10 +60,20 @@ class TransferManager extends EventEmitter {
       segmentMinBytes: global.segmentMinBytes ?? 1024 * 1024,
       bandwidthLimitKBps: global.bandwidthLimitKBps || 0,
     };
+    // Auto mode picks the segment count from the file's size (see
+    // autoSegmentsForSize) instead of the fixed global value — bigger files
+    // get more connections. A per-site or per-transfer override is an
+    // explicit choice and always wins over auto.
+    const explicitOverride = settings.segments || site.segments;
+    const autoOn = global.autoSegments !== false && !explicitOverride;
+    const segmentsForFile = autoOn
+      ? autoSegmentsForSize(size)
+      : effective.segments;
     const job = {
       id: crypto.randomUUID(),
       direction, // 'download' | 'upload'
       isDir, // folder transfer via `mirror` instead of a single-file get/put
+      autoSegments: autoOn,
       site: { name: site.name, host: site.host, port: site.port, protocol: site.protocol },
       _site: site, // full site incl. credentials; never serialized
       remotePath,
@@ -73,7 +83,7 @@ class TransferManager extends EventEmitter {
       // file download segments. lftp has no pput, so uploads never segment.
       segments:
         !isDir && direction === 'download' && size >= effective.segmentMinBytes
-          ? effective.segments
+          ? segmentsForFile
           : 1,
       effective,
       status: 'queued', // queued | running | done | error | cancelled
@@ -455,6 +465,7 @@ class TransferManager extends EventEmitter {
       name: path.basename(job.direction === 'download' ? job.remotePath : job.localPath),
       size: job.size,
       segments: job.segments,
+      autoSegments: job.autoSegments,
       status: job.status,
       percent: job.percent,
       bytes: job.bytes,
@@ -495,6 +506,19 @@ function dirSizeBytes(root, cb) {
   walk(root);
 }
 
+// Size-tiered segment count for auto mode. Empirically, smaller files do
+// best with a handful of connections and larger files keep scaling, so:
+//   < 512 MB -> 6,  < 2 GB -> 8,  < 8 GB -> 12,  >= 8 GB -> 16
+// (files below settings.segmentMinBytes aren't segmented at all — handled
+// by the caller). Capped at 16 to match the Settings UI range.
+function autoSegmentsForSize(bytes) {
+  const MB = 1024 * 1024, GB = 1024 * MB;
+  if (bytes < 512 * MB) return 6;
+  if (bytes < 2 * GB) return 8;
+  if (bytes < 8 * GB) return 12;
+  return 16;
+}
+
 function formatSpeed(bytesPerSec) {
   const u = ['B', 'K', 'M', 'G', 'T'];
   let v = bytesPerSec, i = 0;
@@ -510,4 +534,4 @@ function formatEta(seconds) {
   return `${Math.floor(s / 3600)}h${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}m`;
 }
 
-module.exports = { TransferManager, PROGRESS_RE };
+module.exports = { TransferManager, PROGRESS_RE, autoSegmentsForSize };

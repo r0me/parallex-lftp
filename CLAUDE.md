@@ -141,7 +141,11 @@ parallex-lftp/
   threads/segments override). Passwords are never echoed back to the
   client (`hasPassword` flag instead; empty password on edit = keep stored)
 - Global Settings: thread count, segments-per-file, minimum file size
-  before segmenting kicks in, optional bandwidth cap
+  before segmenting kicks in, optional bandwidth cap. **Auto-segments**
+  (default on) picks `pget -n` per file size instead of the fixed value —
+  `autoSegmentsForSize` in `transferManager.js`: <512MB→6, <2GB→8, <8GB→12,
+  ≥8GB→16. A per-site or per-transfer `segments` override, or turning auto
+  off, forces the fixed count; files below `segmentMinBytes` never segment
 - Themes: Rack Amber (default), Retro Green (black/green phosphor), Deep
   Blue — picker in Settings; choice persists in `settings.json` and is
   mirrored to `localStorage` so the page paints right pre-auth. Themes are

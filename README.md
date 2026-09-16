@@ -15,7 +15,10 @@ native `pget -n <segments>`.
   credentials, initial directories, optional per-site thread/segment
   overrides), stored in `config/sites.json`
 - **Transfer settings** — concurrent transfer count, segments per file,
-  minimum file size before segmenting kicks in, optional bandwidth cap
+  minimum file size before segmenting kicks in, optional bandwidth cap.
+  **Auto-segments** (on by default) sizes `pget -n` to each file — more
+  connections for bigger files (6 → 16 as they grow) — or set a fixed
+  count if you prefer
 - **Segmented parallel downloads** — large downloads use `pget -n
   <segments>` for multi-connection transfers (uploads use plain `put`;
   lftp has no segmented upload for a single file)
