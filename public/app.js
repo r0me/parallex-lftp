@@ -3,6 +3,9 @@
 /* Parallex LFTP frontend: API calls, pane rendering, WebSocket handling. */
 
 const state = {
+  authed: false,
+  authMode: 'login',
+  ws: null,
   sessionId: null,
   site: null, // { id, name }
   localPath: '/',
@@ -30,6 +33,9 @@ async function api(path, opts = {}) {
   let data = null;
   try { data = await res.json(); } catch (_) { /* no body */ }
   if (!res.ok) {
+    if (res.status === 401 && data && data.code === 'AUTH_REQUIRED') {
+      showAuthOverlay('login');
+    }
     const err = new Error((data && data.error) || `HTTP ${res.status}`);
     err.status = res.status;
     err.detail = data && data.detail;
@@ -310,6 +316,7 @@ function renderJob(job) {
 function connectWs() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(`${proto}://${location.host}/ws`);
+  state.ws = ws;
   ws.onmessage = (ev) => {
     try {
       const msg = JSON.parse(ev.data);
@@ -322,7 +329,74 @@ function connectWs() {
       }
     } catch (_) { /* ignore malformed frames */ }
   };
-  ws.onclose = () => setTimeout(connectWs, 2000);
+  ws.onclose = (ev) => {
+    state.ws = null;
+    if (ev.code === 4401) {
+      showAuthOverlay('login'); // session expired — don't reconnect-loop
+      return;
+    }
+    if (state.authed) setTimeout(connectWs, 2000);
+  };
+}
+
+// ---- auth ----------------------------------------------------------------
+
+function showAuthOverlay(mode) {
+  state.authed = false;
+  state.authMode = mode; // 'setup' | 'login'
+  $('btn-logout').hidden = true;
+  $('auth-title').textContent = mode === 'setup' ? 'CREATE ACCOUNT' : 'SIGN IN';
+  $('auth-submit').textContent = mode === 'setup' ? 'CREATE' : 'SIGN IN';
+  $('auth-hint').textContent =
+    mode === 'setup'
+      ? 'First run: choose a username and password (min 8 characters) for this instance. Locked out later? Delete config/auth.json and restart.'
+      : '';
+  $('auth-error').hidden = true;
+  $('auth-overlay').hidden = false;
+  $('auth-username').focus();
+}
+
+async function handleAuthSubmit(e) {
+  e.preventDefault();
+  const body = { username: $('auth-username').value.trim(), password: $('auth-password').value };
+  try {
+    await api(state.authMode === 'setup' ? '/auth/setup' : '/auth/login', { method: 'POST', body });
+    $('auth-overlay').hidden = true;
+    $('auth-password').value = '';
+    startApp(body.username);
+  } catch (err) {
+    const el = $('auth-error');
+    el.textContent = err.message;
+    el.hidden = false;
+  }
+}
+
+async function logout() {
+  try { await api('/auth/logout', { method: 'POST' }); } catch (_) { /* cookie cleared anyway */ }
+  if (state.ws) state.ws.close();
+  if (state.sessionId) handleSessionLost();
+  showAuthOverlay('login');
+}
+
+function startApp(username) {
+  state.authed = true;
+  $('btn-logout').hidden = false;
+  setStatus(username ? `signed in as ${username}` : 'ready');
+  loadLocal('/');
+  connectWs();
+}
+
+async function initAuth() {
+  try {
+    const s = await api('/auth/status');
+    if (!s.configured) return showAuthOverlay('setup');
+    if (!s.authenticated) return showAuthOverlay('login');
+    $('auth-overlay').hidden = true;
+    startApp(s.username);
+  } catch (err) {
+    setStatus(`auth check failed: ${err.message}`, true);
+    setTimeout(initAuth, 3000);
+  }
 }
 
 // ---- Site Manager --------------------------------------------------------
@@ -501,7 +575,7 @@ async function paneAction(act) {
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('[data-act]').forEach((b) => (b.onclick = () => paneAction(b.dataset.act)));
   document.querySelectorAll('[data-close]').forEach((b) => (b.onclick = () => closeModal(b.dataset.close)));
-  document.querySelectorAll('.modal-backdrop').forEach((bd) => {
+  document.querySelectorAll('.modal-backdrop:not(.auth-overlay)').forEach((bd) => {
     bd.addEventListener('mousedown', (e) => { if (e.target === bd) bd.hidden = true; });
   });
 
@@ -529,7 +603,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
+  $('auth-form').onsubmit = handleAuthSubmit;
+  $('btn-logout').onclick = logout;
+
   $('remote-empty').hidden = false;
-  loadLocal('/');
-  connectWs();
+  initAuth();
 });

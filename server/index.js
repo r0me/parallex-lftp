@@ -64,6 +64,20 @@ const settingsStore = new JsonStore(path.join(CONFIG_DIR, 'settings.json'), {
   bandwidthLimitKBps: 0,
 });
 
+const auth = require('./auth');
+auth.init(CONFIG_DIR);
+
+// Optional env seed: AUTH_USERNAME/AUTH_PASSWORD create the user at boot
+// when none is configured yet (the values are hashed, never stored).
+if (!auth.isConfigured() && process.env.AUTH_USERNAME && process.env.AUTH_PASSWORD) {
+  if (process.env.AUTH_PASSWORD.length < 8) {
+    log('auth', 'AUTH_PASSWORD too short (min 8 chars) — ignoring env seed');
+  } else {
+    auth.createUser(process.env.AUTH_USERNAME, process.env.AUTH_PASSWORD);
+    log('auth', 'user seeded from AUTH_USERNAME/AUTH_PASSWORD env');
+  }
+}
+
 const sessionManager = new SessionManager();
 const transferManager = new TransferManager(() => settingsStore.read());
 
@@ -75,6 +89,11 @@ app.use((req, _res, next) => {
   if (req.path.startsWith('/api/')) log('http', `${req.method} ${redact(req.originalUrl)}`);
   next();
 });
+
+// Auth endpoints are open (login has to be reachable); everything else
+// under /api requires a valid session cookie.
+app.use('/api/auth', auth.router());
+app.use('/api', auth.requireAuth);
 
 app.use('/api/sites', require('./routes/sites')(sitesStore));
 app.use('/api/settings', require('./routes/settings')(settingsStore));
@@ -105,7 +124,12 @@ const server = http.createServer(app);
 // WebSocket broadcast: transfer progress fans out to every connected
 // client. Single-user tool — no auth boundary between clients.
 const wss = new WebSocketServer({ server, path: '/ws' });
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
+  if (!auth.verifyRequest(req)) {
+    log('ws', 'rejected unauthenticated websocket client');
+    ws.close(4401, 'authentication required');
+    return;
+  }
   log('ws', `client connected (${wss.clients.size} total)`);
   ws.send(JSON.stringify({ type: 'transfers', jobs: transferManager.list() }));
   ws.on('close', () => log('ws', `client disconnected (${wss.clients.size} total)`));

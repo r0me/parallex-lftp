@@ -26,6 +26,7 @@
       <button id="btn-sites" class="btn">SITE MANAGER</button>
       <button id="btn-settings" class="btn">SETTINGS</button>
       <button id="btn-disconnect" class="btn danger" disabled>DISCONNECT</button>
+      <button id="btn-logout" class="btn" hidden>LOG OUT</button>
     </div>
   </header>
 
@@ -145,6 +146,20 @@
         <label>Min file size to segment (MB)<input id="st-segmentMin" type="number" min="0" step="0.5"></label>
         <label>Bandwidth cap (KB/s, 0 = unlimited)<input id="st-bandwidth" type="number" min="0"></label>
         <div class="modal-actions"><button type="submit" class="btn accent">SAVE</button></div>
+      </form>
+    </div>
+  </div>
+
+  <!-- AUTH OVERLAY (first-run setup or sign-in) -->
+  <div class="modal-backdrop auth-overlay" id="auth-overlay" hidden>
+    <div class="modal">
+      <div class="modal-head"><span id="auth-title">SIGN IN</span></div>
+      <form id="auth-form" class="modal-body site-form">
+        <p id="auth-hint" class="auth-hint"></p>
+        <label>Username<input id="auth-username" autocomplete="username" required></label>
+        <label>Password<input id="auth-password" type="password" autocomplete="current-password" required></label>
+        <p id="auth-error" class="auth-error" hidden></p>
+        <div class="modal-actions"><button type="submit" class="btn accent" id="auth-submit">SIGN IN</button></div>
       </form>
     </div>
   </div>

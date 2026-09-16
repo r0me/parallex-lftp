@@ -33,6 +33,7 @@ web app instead of a desktop app.
 | Credential storage | AES-256-GCM at rest (`server/secretStore.js`), stored as `enc:v1:<b64(iv\|tag\|ct)>` | Key from `PARALLEX_SECRET` env (scrypt-derived; keeps the key out of the volume) or an auto-generated `/config/.secret` keyfile (0600). Boot migration encrypts legacy plaintext and re-encrypts keyfile-era values once a secret is set (decrypt tries primary key, then keyfile fallback). Decrypted only in memory at connect/enqueue; never in API responses or logs. At-rest protection only — config volume + secret together still decrypt |
 | Settings storage | JSON file (`/config/settings.json`) | Same reasoning |
 | Transfer progress | WebSocket broadcast from a `TransferManager` EventEmitter | Simple pub-sub; fine for a single-user tool with no auth boundaries to worry about between clients |
+| Web-UI auth | Single local account (`server/auth.js`): scrypt hash in `/config/auth.json`, stateless signed session cookie (7d, httpOnly, SameSite=Lax), HMAC key HKDF-derived from the secretStore primary key | First-run setup screen, or `AUTH_USERNAME`/`AUTH_PASSWORD` env seed (hashed at boot, never stored). All `/api/*` except `/api/auth/*` gated by `requireAuth`; WS upgrade verified too (close 4401). Password change bumps `tokenVersion` → old cookies die. Lockout recovery = delete auth.json + restart. Login failures rate-damped. HTTP-only, so TLS proxy still advised beyond the LAN |
 | File ownership | `entrypoint.sh` drops root to `PUID:PGID` (default 1000:1000) via `setpriv` before exec'ing node | Downloads into the mounted `./data` are editable on the host without sudo (LinuxServer.io convention). Entrypoint chowns `/config` (small) but **never recurses `/data`** (can be huge; new files are created as PUID:PGID anyway). `UMASK` env sets creation perms. `setpriv` comes with util-linux, already in debian-slim |
 
 ## lftp command wrapper details (the trickiest part)
@@ -93,7 +94,8 @@ parallex-lftp/
   server/
     index.js              Express app, static frontend, WebSocket broadcast, HOME/.ssh setup, credential migration
     logger.js             log() + redact() helpers (credential scrubbing)
-    secretStore.js        AES-256-GCM credential encryption at rest (env secret or keyfile)
+    secretStore.js        AES-256-GCM credential encryption at rest (env secret or keyfile) + session signing key
+    auth.js               Single-user auth: scrypt user store, signed-cookie sessions, requireAuth, /api/auth routes
     lftpSession.js        Persistent lftp session wrapper (sentinel protocol, error detection)
     sessionManager.js     Tracks active LftpSession instances by session id
     transferManager.js    Per-job lftp processes for pget/pput, progress parsing, thread-limited queue
@@ -113,6 +115,8 @@ parallex-lftp/
 
 ## What's implemented and working
 
+- Single-user login gating the whole API and WebSocket (first-run setup
+  screen or env seed; logout button; see the auth decision row)
 - Dual-pane browsing (local via Node `fs`, remote via persistent lftp
   session) with clickable breadcrumb navigation
 - Site Manager: create/edit/delete saved sites (name, host, port, protocol,
@@ -132,9 +136,11 @@ parallex-lftp/
 
 ## Known gaps / not yet done
 
-- **No auth on the web UI itself.** Anyone reaching port 7609 can use every
-  saved site. Needs a reverse proxy with auth (or localhost/VPN-only
-  deployment) before being exposed anywhere untrusted.
+- **Auth is single-user, homelab-grade, and HTTP-only.** The login gate
+  works, but without TLS the password/cookie are cleartext on the wire —
+  a TLS reverse proxy is still the answer for anything beyond the LAN.
+  No multi-user, no 2FA, sessions can't be revoked individually (only
+  all at once via password change).
 - **Credential encryption is at-rest only** (see the decision table): a
   leaked `sites.json` alone is useless, but config volume + secret
   together still decrypt. `PARALLEX_SECRET` in a `.env` file is the

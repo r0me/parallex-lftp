@@ -15,6 +15,11 @@ services:
       # the key never touches the ./config volume. If unset, a random
       # keyfile at ./config/.secret is used instead.
       - PARALLEX_SECRET=${PARALLEX_SECRET:-}
+      # optional: seed the single web-UI user at first boot (values are
+      # hashed into config/auth.json, never stored as-is). Leave unset to
+      # create the account through the first-run setup screen instead.
+      - AUTH_USERNAME=${AUTH_USERNAME:-}
+      - AUTH_PASSWORD=${AUTH_PASSWORD:-}
     volumes:
       # what the LOCAL pane browses
       - ./data:/data

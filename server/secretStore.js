@@ -23,6 +23,21 @@ let keys = null; // [primary, ...fallbacks]
 function init(dir) {
   configDir = dir;
   keys = null;
+  signingKey = null;
+}
+
+let signingKey = null;
+
+// Session-cookie HMAC key, derived from the primary encryption key with a
+// distinct HKDF label so cookie signing and credential encryption never
+// share key material directly.
+function getSigningKey() {
+  if (!signingKey) {
+    signingKey = Buffer.from(
+      crypto.hkdfSync('sha256', loadKeys()[0], 'parallex-lftp', 'session-signing.v1', 32)
+    );
+  }
+  return signingKey;
 }
 
 function loadKeys() {
@@ -109,4 +124,4 @@ function migrateValue(value) {
   }
 }
 
-module.exports = { init, encrypt, decrypt, isEncrypted, migrateValue };
+module.exports = { init, encrypt, decrypt, isEncrypted, migrateValue, getSigningKey };

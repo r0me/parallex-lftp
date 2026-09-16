@@ -41,13 +41,51 @@ Volumes:
 
 ## Configuration
 
-Environment variables (already set by `docker-compose.yml` / `Dockerfile`):
+All settings are environment variables. The easiest way to set them is a
+`.env` file next to `docker-compose.yml` — compose picks it up
+automatically and none of the values end up in the compose file itself:
+
+```bash
+# .env
+PUID=1000
+PGID=1000
+PARALLEX_SECRET=change-me-to-something-long-and-random
+AUTH_USERNAME=admin
+AUTH_PASSWORD=a-good-password
+```
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `PORT` | `7609` | HTTP/WebSocket listen port |
-| `LOCAL_ROOT` | `/data` | Sandbox root for the LOCAL pane |
-| `CONFIG_DIR` | `/config` | Where sites/settings/known_hosts persist |
+| `PORT` | `7609` | HTTP/WebSocket listen port inside the container. Change the host-side mapping in `docker-compose.yml` (`ports:`) rather than this. |
+| `LOCAL_ROOT` | `/data` | Sandbox root for the LOCAL pane. Everything the browser shows and every transfer target lives under here; paths outside it are rejected. Mapped from `./data` on the host by compose. |
+| `CONFIG_DIR` | `/config` | Persistent state: `sites.json` (saved sites), `settings.json` (transfer tuning), `auth.json` (web-UI account), `.secret` (auto-generated encryption key, if used), and `.ssh/known_hosts` (trusted SFTP host keys). Mapped from `./config` on the host. |
+| `PUID` | `1000` | Uid the app runs as after the entrypoint drops root. Files it creates (downloads, config) are owned by this uid on the host, so set it to your own user (`id -u`) to make downloads editable without sudo. |
+| `PGID` | `1000` | Gid the app runs as — pair of `PUID`; find yours with `id -g`. |
+| `UMASK` | `022` | Permission mask for newly created files. `022` → files `644` / dirs `755` (group+others read-only). Use `002` if a shared group should also be able to write. |
+| `PARALLEX_SECRET` | *(unset)* | Secret behind the at-rest encryption of site passwords in `sites.json`. When set, the AES key is derived from it (scrypt) and **never touches the `./config` volume** — recommended. When unset, a random keyfile is generated at `config/.secret` (mode 600) instead. Setting it later is safe: existing values are transparently re-encrypted under the new key at next boot. If you change it *and* delete the keyfile, saved passwords become unreadable and connect returns a clear error asking you to re-enter them. |
+| `AUTH_USERNAME` | *(unset)* | Optional: seed the single web-UI account at first boot. Only used while no account exists yet (i.e. no `config/auth.json`); ignored afterwards. If unset, the UI shows a one-time create-account screen instead. |
+| `AUTH_PASSWORD` | *(unset)* | Password for the seeded account, min 8 characters. It is scrypt-hashed into `config/auth.json` at boot — the plaintext is never stored. |
+
+## Authentication
+
+The web UI is protected by a single local account:
+
+- **First run**: the UI shows a create-account screen (username +
+  password, min 8 chars). Alternatively seed it via
+  `AUTH_USERNAME`/`AUTH_PASSWORD` (see Configuration) — handy for
+  fully scripted deployments.
+- **Sessions**: a signed, httpOnly cookie valid for 7 days; it survives
+  container restarts. Logging out clears it, and changing the password
+  invalidates every previously issued session.
+- **Locked out?** Delete `config/auth.json` on the host and restart the
+  container — you're back at the create-account screen. (Anyone with
+  access to the config volume can do the same, which matches the
+  existing at-rest threat model.)
+- **Exposure note**: traffic is plain HTTP, so the password and cookie
+  are visible on the wire to anyone in-path. On a trusted LAN that's
+  usually fine; for anything beyond that, put a TLS-terminating reverse
+  proxy in front. Login attempts are rate-damped, but this is
+  homelab-grade auth, not a hardened public-facing gateway.
 
 ## File ownership (PUID/PGID)
 
@@ -81,9 +119,10 @@ prompt, so SFTP uses **trust-on-first-use** (`sftp:auto-confirm yes`).
 
 ## Known caveats
 
-- **No auth on the web UI itself.** Anyone who can reach port 7609 can use
-  every saved site. Put it behind a reverse proxy with auth, or keep it
-  localhost/VPN-only.
+- **Auth is homelab-grade and HTTP-only.** The login gate keeps casual
+  LAN visitors out, but without TLS the credentials and session cookie
+  travel in cleartext — front it with a TLS reverse proxy before exposing
+  it beyond your own network.
 - **Credential encryption is at-rest, not end-to-end.** Site passwords in
   `config/sites.json` are AES-256-GCM encrypted. The key comes from the
   `PARALLEX_SECRET` env var when set (recommended — put it in a `.env`

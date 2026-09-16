@@ -349,6 +349,11 @@ body {
 .site-form .w-proto { width: 90px; }
 .modal-actions { display: flex; gap: 8px; margin-top: 6px; }
 
+/* ---- auth overlay ---- */
+.auth-overlay { z-index: 200; background: rgba(6,8,10,.92); }
+.auth-hint { font-size: 11px; color: var(--text-dim); line-height: 1.5; }
+.auth-error { font-family: var(--mono); font-size: 11px; color: var(--red); }
+
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 5px; }
