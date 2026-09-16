@@ -42,6 +42,63 @@ Volumes:
 | `./data` | `/data` | What the LOCAL pane browses |
 | `./config` | `/config` | `sites.json`, `settings.json`, SSH `known_hosts` |
 
+## Docker Compose (full example)
+
+A complete `docker-compose.yml` with every usable setting spelled out.
+Values shown are the defaults — drop any line you don't need, or move the
+secrets into a `.env` file (recommended, see below):
+
+```yaml
+services:
+  parallex-lftp:
+    build: .                       # or use a prebuilt image reference here
+    container_name: parallex-lftp
+    ports:
+      - "7609:7609"                # host:container — change the LEFT side
+                                   # to serve on a different host port
+    volumes:
+      # what the LOCAL pane browses; downloads land here
+      - ./data:/data
+      # persistent state: sites.json, settings.json, auth.json,
+      # .secret (encryption keyfile) and .ssh/known_hosts
+      - ./config:/config
+    environment:
+      # ---- file ownership -------------------------------------------
+      # run as this uid:gid so downloads are editable on the host
+      # without sudo (find yours with `id -u` / `id -g`)
+      - PUID=1000
+      - PGID=1000
+      # permission mask for new files: 022 -> 644/755,
+      # 002 -> group-writable 664/775
+      - UMASK=022
+      # ---- credential encryption ------------------------------------
+      # key source for encrypting saved site passwords; when set, the
+      # key never touches ./config. Unset -> auto keyfile at
+      # ./config/.secret instead
+      - PARALLEX_SECRET=change-me-to-something-long-and-random
+      # ---- web-UI account (optional seed) ----------------------------
+      # creates the single account at first boot (values are hashed,
+      # never stored as-is; ignored once an account exists). Leave both
+      # unset to use the first-run setup screen in the browser instead
+      - AUTH_USERNAME=admin
+      - AUTH_PASSWORD=a-good-password
+    restart: unless-stopped
+```
+
+With a `.env` file next to the compose file (compose reads it
+automatically), the compose entries can stay as pass-throughs — which is
+exactly what this repo's checked-in `docker-compose.yml` does:
+
+```yaml
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - UMASK=${UMASK:-022}
+      - PARALLEX_SECRET=${PARALLEX_SECRET:-}
+      - AUTH_USERNAME=${AUTH_USERNAME:-}
+      - AUTH_PASSWORD=${AUTH_PASSWORD:-}
+```
+
 ## Configuration
 
 All settings are environment variables. The easiest way to set them is a
