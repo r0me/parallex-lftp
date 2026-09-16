@@ -5,6 +5,8 @@ using [`lftp`](https://lftp.yar.ru/) as the transfer engine. Supports
 **FTP, FTPS, and SFTP**, with real parallel segmented downloads via lftp's
 native `pget -n <segments>`.
 
+![Dual-pane browsing with a segmented download and a folder transfer in progress](docs/screenshots/main.png)
+
 ## Features
 
 - **Dual-pane browsing** — local (a mounted Docker volume) on the left,
@@ -33,6 +35,16 @@ native `pget -n <segments>`.
   (AES-256-GCM) in `config/sites.json`, passed to lftp over stdin (never
   CLI args, so they don't show in `ps`), and anything logged or returned
   to the browser is run through a redaction pass
+
+## Screenshots
+
+| Site Manager | Settings |
+|---|---|
+| ![Site Manager modal with saved connection profiles](docs/screenshots/site-manager.png) | ![Transfer settings with the theme picker](docs/screenshots/settings.png) |
+
+| Retro Green theme | Deep Blue theme |
+|---|---|
+| ![Retro Green phosphor theme](docs/screenshots/theme-green.png) | ![Deep Blue theme](docs/screenshots/theme-blue.png) |
 
 ## Running it
 

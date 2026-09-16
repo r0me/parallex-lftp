@@ -107,6 +107,7 @@ parallex-lftp/
   .github/workflows/docker.yml  pushes ghcr.io/r0me/parallex-lftp:latest (amd64+arm64) on main
   templates/my-parallex-lftp.xml   Unraid Docker template (GHCR image, PUID 99/PGID 100 defaults); `my-` prefix = Unraid user-template convention, copied to the flash drive's templates-user folder
   docs/icon.png           64x64 stripe-mark icon referenced by the Unraid template
+  docs/screenshots/       README screenshots (captured from the app; generic demo data)
   server/
     index.js              Express app, static frontend, WebSocket broadcast, HOME/.ssh setup, credential migration
     logger.js             log() + redact() helpers (credential scrubbing)
