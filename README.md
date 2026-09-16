@@ -1,5 +1,5 @@
 # parallex-lftp
-total AI slop, but it works and is free. 
+total AI slop, but it works and is free. uploading is fucked but that is not what this is for lol.  
 A dual-pane file browser that runs as a web app in Docker,
 using [`lftp`](https://lftp.yar.ru/) as the transfer engine. Supports
 **FTP, FTPS, and SFTP**, with real parallel segmented downloads via lftp's
