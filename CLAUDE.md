@@ -71,6 +71,16 @@ Key gotchas learned the hard way:
   credential-carrying stdin back into the output stream.
 - **lftp has no `pput`** (only `pget` exists). Segmented transfers are
   download-only; uploads always use plain `put`.
+- **lftp's SFTP defaults are slow**: `sftp:size-read/write` (32K) and
+  `sftp:max-packets-in-flight` (16) cap each connection at a few MB/s no
+  matter the link. Both the session and transfer processes set 128K blocks
+  and 64 packets in flight, which takes SFTP to line speed.
+- Real per-segment progress comes from the **`<file>.lftp-pget-status`**
+  file pget writes beside the download (`pget:save-status 2` makes it
+  refresh every 2s): `size=` plus `N.pos=`/`N.limit=` per chunk, chunks
+  contiguous, finished chunks dropping out of the file. The tty meter only
+  gives an aggregate line, so without this the segment bar can only fake
+  sequential fill.
 
 ## File structure
 

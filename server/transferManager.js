@@ -2,6 +2,7 @@
 
 const { spawn, spawnSync } = require('child_process');
 const crypto = require('crypto');
+const fs = require('fs');
 const path = require('path');
 const { EventEmitter } = require('events');
 const { quote } = require('./lftpSession');
@@ -75,6 +76,8 @@ class TransferManager extends EventEmitter {
       startedAt: null,
       finishedAt: null,
       proc: null,
+      segmentProgress: null, // per-segment 0..1, from the pget status file
+      _statusTimer: null,
     };
     this.jobs.set(job.id, job);
     this.queue.push(job);
@@ -110,9 +113,20 @@ class TransferManager extends EventEmitter {
       'set net:timeout 15',
       'set sftp:auto-confirm yes',
       'set xfer:eta-period 3',
+      // frequent pget status-file writes drive the per-segment progress UI
+      'set pget:save-status 2',
     ];
     if (site.protocol === 'ftps') {
       settingsCmds.push('set ftp:ssl-force yes', 'set ftp:ssl-protect-data yes');
+    }
+    if (site.protocol === 'sftp') {
+      // lftp's SFTP defaults (32K blocks, 16 packets in flight) cap each
+      // connection at a few MB/s; these take it to line speed
+      settingsCmds.push(
+        'set sftp:size-read 131072',
+        'set sftp:size-write 131072',
+        'set sftp:max-packets-in-flight 64'
+      );
     }
     if (job.effective.bandwidthLimitKBps > 0) {
       settingsCmds.push(`set net:limit-rate ${job.effective.bandwidthLimitKBps * 1024}`);
@@ -169,8 +183,9 @@ class TransferManager extends EventEmitter {
         if (!line.trim()) continue;
         const m = PROGRESS_RE.exec(line);
         if (m) {
-          job.bytes = Number(m[1]);
-          job.percent = Number(m[2]);
+          // monotonic: the pty meter can lag the pget status file
+          job.bytes = Math.max(job.bytes, Number(m[1]));
+          job.percent = Math.max(job.percent, Number(m[2]));
           if (m[3]) job.speed = m[3];
           if (m[4]) job.eta = m[4];
           this._broadcast(job);
@@ -183,10 +198,22 @@ class TransferManager extends EventEmitter {
     proc.stdout.on('data', onData);
     proc.stderr.on('data', onData);
 
+    // pget writes `<file>.lftp-pget-status` (pos/limit per chunk) while it
+    // runs — the only source of true per-segment progress, since the tty
+    // meter is a single aggregate line.
+    if (job.direction === 'download' && job.segments > 1) {
+      job._statusTimer = setInterval(() => this._readPgetStatus(job), 1000);
+    }
+
     proc.on('exit', (code) => {
       this.running--;
       job.proc = null;
       job.finishedAt = Date.now();
+      if (job._statusTimer) {
+        clearInterval(job._statusTimer);
+        job._statusTimer = null;
+      }
+      if (code === 0) job.segmentProgress = null; // bar renders full via percent
       if (job.status === 'cancelled') {
         // already marked by cancel()
       } else if (code === 0) {
@@ -206,6 +233,51 @@ class TransferManager extends EventEmitter {
       this._broadcast(job);
     });
     this._broadcast(job);
+  }
+
+  // Parse `<file>.lftp-pget-status`:
+  //   size=157286400
+  //   0.pos=524288    <- chunk's current absolute offset
+  //   0.limit=39321600 <- chunk's end offset
+  // Chunks are contiguous, so chunk i starts where chunk i-1 ends (chunk 0
+  // at 0). A chunk missing from the file is finished.
+  _readPgetStatus(job) {
+    fs.readFile(job.localPath + '.lftp-pget-status', 'utf8', (err, text) => {
+      if (err || !text || job.status !== 'running') return;
+      const chunks = new Map();
+      let size = 0;
+      for (const line of text.split('\n')) {
+        let m = /^size=(\d+)/.exec(line);
+        if (m) { size = Number(m[1]); continue; }
+        m = /^(\d+)\.(pos|limit)=(\d+)/.exec(line);
+        if (m) {
+          const c = chunks.get(m[1]) || {};
+          c[m[2]] = Number(m[3]);
+          chunks.set(m[1], c);
+        }
+      }
+      if (!size || chunks.size === 0) return;
+
+      const progress = new Array(job.segments).fill(1); // absent chunk = done
+      let doneBytes = size;
+      for (const [key, c] of chunks) {
+        if (c.pos == null || c.limit == null) continue;
+        const idx = Number(key);
+        doneBytes -= Math.max(0, c.limit - c.pos);
+        // chunk start = previous chunk's limit (chunks are contiguous);
+        // if the predecessor already finished and vanished, approximate
+        const start = idx === 0 ? 0 : chunks.get(String(idx - 1))?.limit;
+        const frac =
+          start != null && c.limit > start
+            ? (c.pos - start) / (c.limit - start)
+            : c.pos / c.limit;
+        if (idx < job.segments) progress[idx] = Math.min(1, Math.max(0, frac));
+      }
+      job.segmentProgress = progress;
+      job.bytes = Math.max(job.bytes, doneBytes);
+      job.percent = Math.max(job.percent, Math.min(99, Math.floor((doneBytes / size) * 100)));
+      this._broadcast(job);
+    });
   }
 
   cancel(id) {
@@ -251,6 +323,7 @@ class TransferManager extends EventEmitter {
       status: job.status,
       percent: job.percent,
       bytes: job.bytes,
+      segmentProgress: job.segmentProgress,
       speed: job.speed,
       eta: job.eta,
       error: job.error,

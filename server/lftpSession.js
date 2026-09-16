@@ -117,6 +117,15 @@ class LftpSession extends EventEmitter {
     if (site.protocol === 'ftps') {
       setup.push('set ftp:ssl-force yes', 'set ftp:ssl-protect-data yes');
     }
+    if (site.protocol === 'sftp') {
+      // lftp's SFTP defaults (32K blocks, 16 packets in flight) cap each
+      // connection at a few MB/s; these take it to line speed
+      setup.push(
+        'set sftp:size-read 131072',
+        'set sftp:size-write 131072',
+        'set sftp:max-packets-in-flight 64'
+      );
+    }
     for (const cmd of setup) await this.exec(cmd);
 
     // Credentials go over stdin via `open -u`, never as CLI args, so they

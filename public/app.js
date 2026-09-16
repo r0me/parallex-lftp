@@ -264,12 +264,22 @@ function renderJob(job) {
   el.className = `job ${job.status}`;
   const arrow = job.direction === 'download' ? '&#8595;' : '&#8593;';
   const segs = Math.max(1, job.segments);
-  // Segment fill visualization: overall percent mapped across segment cells.
+  // Per-segment fill from pget's status file when available (shows real
+  // parallel chunk progress); otherwise map overall percent across cells.
+  const perSeg = Array.isArray(job.segmentProgress) && job.segmentProgress.length === segs
+    ? job.segmentProgress
+    : null;
   let segHtml = '';
   for (let i = 0; i < segs; i++) {
-    const lo = (i / segs) * 100;
-    const hi = ((i + 1) / segs) * 100;
-    const fill = Math.max(0, Math.min(1, (job.percent - lo) / (hi - lo)));
+    let fill;
+    if (perSeg) {
+      fill = perSeg[i];
+    } else {
+      const lo = (i / segs) * 100;
+      const hi = ((i + 1) / segs) * 100;
+      fill = (job.percent - lo) / (hi - lo);
+    }
+    fill = Math.max(0, Math.min(1, fill));
     segHtml += `<div class="seg"><div class="fill" style="transform:scaleX(${fill.toFixed(3)})"></div></div>`;
   }
   el.innerHTML =
