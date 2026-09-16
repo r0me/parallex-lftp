@@ -105,7 +105,7 @@ parallex-lftp/
   Dockerfile              node:20-slim + lftp + openssh-client
   docker-compose.yml      port 7609, mounts ./data -> /data, ./config -> /config
   .github/workflows/docker.yml  pushes ghcr.io/r0me/parallex-lftp:latest (amd64+arm64) on main
-  templates/parallex-lftp.xml   Unraid Docker template (GHCR image, PUID 99/PGID 100 defaults); in templates/ so the repo works as an Unraid template repository
+  templates/my-parallex-lftp.xml   Unraid Docker template (GHCR image, PUID 99/PGID 100 defaults); `my-` prefix = Unraid user-template convention, copied to the flash drive's templates-user folder
   docs/icon.png           64x64 stripe-mark icon referenced by the Unraid template
   server/
     index.js              Express app, static frontend, WebSocket broadcast, HOME/.ssh setup, credential migration
@@ -162,9 +162,10 @@ parallex-lftp/
 - Credential redaction in all logs and error responses
 - CI image publishing: GitHub Actions pushes
   `ghcr.io/r0me/parallex-lftp:latest` + `:sha` (amd64/arm64) on every
-  main push; `templates/parallex-lftp.xml` deploys that image on Unraid
-  (add the repo under Docker → Template repositories, or paste the raw
-  template URL; GHCR package must be set public once for anonymous pulls)
+  main push; `templates/my-parallex-lftp.xml` deploys that image on Unraid
+  (copy it to the flash drive's `config/plugins/dockerMan/templates-user/`
+  then Docker → Add Container → pick it from the Template dropdown; GHCR
+  package must be set public once for anonymous pulls)
 
 ## Known gaps / not yet done
 

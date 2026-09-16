@@ -111,34 +111,34 @@ Unraid's Docker manager wants a prebuilt image plus a template — both are
 provided. Every push to `main` publishes
 `ghcr.io/r0me/parallex-lftp:latest` (amd64 + arm64) via GitHub Actions.
 
-**Recommended: add the template repository** (so it shows up in the
-Add Container dropdown and gets update checks)
+**Install the template** (current Unraid steers user templates to the
+flash drive's `templates-user` folder, so drop the file there and it shows
+up in the Add Container dropdown):
 
-1. Unraid web UI → **Docker** tab → toggle on advanced view (top-right) →
-   in **Template repositories**, add:
+1. Download the template file:
    ```
-   https://github.com/r0me/parallex-lftp
+   https://raw.githubusercontent.com/r0me/parallex-lftp/main/templates/my-parallex-lftp.xml
    ```
-   Save. Unraid reads the `templates/` folder; "parallex-lftp" now appears
-   under **Add Container → Template**.
+2. Copy `my-parallex-lftp.xml` onto the Unraid flash drive at
+   `config/plugins/dockerMan/templates-user/`, either way:
+   - **SMB** — browse to `\\TOWER\flash\config\plugins\dockerMan\templates-user\`
+     and drop the file in (enable the *flash* share's SMB export first if
+     it's off: Main → Flash → *Export: Yes*).
+   - **SSH / console** — the flash is mounted at `/boot`, so:
+     ```
+     scp my-parallex-lftp.xml root@TOWER:/boot/config/plugins/dockerMan/templates-user/
+     ```
+3. Unraid web UI → **Docker** tab → **Add Container** → pick
+   **parallex-lftp** from the **Template** dropdown (your user templates
+   are at the top). Then:
 
-**Or: paste the template URL directly**
-
-1. Unraid web UI → **Docker** tab → **Add Container** → advanced view →
-   paste this into *Template URL*:
-   ```
-   https://raw.githubusercontent.com/r0me/parallex-lftp/main/templates/parallex-lftp.xml
-   ```
-
-Then, either way:
-
-2. Pick the share the LOCAL pane should browse for **/data**
+5. Pick the share the LOCAL pane should browse for **/data**
    (default `/mnt/user/downloads/`); **/config** defaults to
    `/mnt/user/appdata/parallex-lftp/`.
-3. Defaults are Unraid-native: `PUID=99` / `PGID=100` (`nobody:users`),
+6. Defaults are Unraid-native: `PUID=99` / `PGID=100` (`nobody:users`),
    so downloads are editable over SMB like any other share file. Set
    `UMASK=000` or `002` if other share users need write access too.
-4. Optionally fill `PARALLEX_SECRET` (recommended) and
+7. Optionally fill `PARALLEX_SECRET` (recommended) and
    `AUTH_USERNAME`/`AUTH_PASSWORD`, or just create the account in the
    browser on first visit. Start the container → `http://SERVER-IP:7609`.
 
