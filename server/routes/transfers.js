@@ -14,7 +14,7 @@ module.exports = function transfersRouter(transferManager, sitesStore, LOCAL_ROO
   });
 
   router.post('/', (req, res) => {
-    const { direction, siteId, remotePath, localPath, size } = req.body || {};
+    const { direction, siteId, remotePath, localPath, size, isDir } = req.body || {};
     if (!['download', 'upload'].includes(direction)) {
       return res.status(400).json({ error: 'direction must be download or upload' });
     }
@@ -44,6 +44,7 @@ module.exports = function transfersRouter(transferManager, sitesStore, LOCAL_ROO
       remotePath,
       localPath: absLocal,
       size: Number(size) || 0,
+      isDir: Boolean(isDir),
     });
     res.status(201).json(job);
   });

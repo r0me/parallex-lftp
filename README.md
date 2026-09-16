@@ -17,6 +17,9 @@ native `pget -n <segments>`.
 - **Segmented parallel downloads** — large downloads use `pget -n
   <segments>` for multi-connection transfers (uploads use plain `put`;
   lftp has no segmented upload for a single file)
+- **Folder transfers** — select a directory and download/upload the whole
+  tree recursively (`mirror`), with parallel files and live progress on
+  folder downloads
 - **Live transfer queue** — per-file segment fill visualization, percent,
   speed, and ETA streamed over WebSocket
 - **File operations** — mkdir / rename / delete on both local and remote

@@ -47,7 +47,7 @@ class TransferManager extends EventEmitter {
     this.running = 0;
   }
 
-  enqueue({ direction, site, remotePath, localPath, size = 0, settings = {} }) {
+  enqueue({ direction, site, remotePath, localPath, size = 0, isDir = false, settings = {} }) {
     const global = this.getSettings();
     const effective = {
       threads: settings.threads || site.threads || global.threads || 2,
@@ -58,14 +58,18 @@ class TransferManager extends EventEmitter {
     const job = {
       id: crypto.randomUUID(),
       direction, // 'download' | 'upload'
+      isDir, // folder transfer via `mirror` instead of a single-file get/put
       site: { name: site.name, host: site.host, port: site.port, protocol: site.protocol },
       _site: site, // full site incl. credentials; never serialized
       remotePath,
       localPath,
       size,
-      // lftp has no pput — only downloads can be segmented
+      // folders use mirror (its own --parallel/--use-pget-n); only a single
+      // file download segments. lftp has no pput, so uploads never segment.
       segments:
-        direction === 'download' && size >= effective.segmentMinBytes ? effective.segments : 1,
+        !isDir && direction === 'download' && size >= effective.segmentMinBytes
+          ? effective.segments
+          : 1,
       effective,
       status: 'queued', // queued | running | done | error | cancelled
       percent: 0,
@@ -78,10 +82,12 @@ class TransferManager extends EventEmitter {
       proc: null,
       segmentProgress: null, // per-segment 0..1, from the pget status file
       _statusTimer: null,
+      _sizeTimer: null, // folder downloads: polls the local dest for progress
+      _lastSample: null, // { bytes, t } for folder speed/ETA
     };
     this.jobs.set(job.id, job);
     this.queue.push(job);
-    log('transfer', `queued ${direction} ${remotePath} <-> ${localPath} (${job.segments} segment(s))`);
+    log('transfer', `queued ${direction} ${isDir ? 'folder ' : ''}${remotePath} <-> ${localPath} (${job.segments} segment(s))`);
     this._broadcast(job);
     this._drain();
     return this.describe(job);
@@ -132,14 +138,25 @@ class TransferManager extends EventEmitter {
       settingsCmds.push(`set net:limit-rate ${job.effective.bandwidthLimitKBps * 1024}`);
     }
 
+    const par = Math.max(1, job.effective.threads);
     let xfer;
-    if (job.direction === 'download') {
+    if (job.isDir) {
+      // Recursive folder transfer. `mirror` walks the tree; --parallel runs
+      // several files at once and (download only) --use-pget-n segments each
+      // large file. -c continues a partial mirror on retry.
+      if (job.direction === 'download') {
+        xfer = `mirror -c --parallel=${par} --use-pget-n=${job.effective.segments} ${quote(job.remotePath)} ${quote(job.localPath)}`;
+      } else {
+        // -R = reverse (upload); no pget on the way up
+        xfer = `mirror -R -c --parallel=${par} ${quote(job.localPath)} ${quote(job.remotePath)}`;
+      }
+    } else if (job.direction === 'download') {
       xfer =
         job.segments > 1
           ? `pget -n ${job.segments} ${quote(job.remotePath)} -o ${quote(job.localPath)}`
           : `get ${quote(job.remotePath)} -o ${quote(job.localPath)}`;
     } else {
-      // lftp has no pput; uploads are always single-stream
+      // lftp has no pput; single-file uploads are always single-stream
       xfer = `put ${quote(job.localPath)} -o ${quote(job.remotePath)}`;
     }
 
@@ -201,8 +218,17 @@ class TransferManager extends EventEmitter {
     // pget writes `<file>.lftp-pget-status` (pos/limit per chunk) while it
     // runs — the only source of true per-segment progress, since the tty
     // meter is a single aggregate line.
-    if (job.direction === 'download' && job.segments > 1) {
+    if (!job.isDir && job.direction === 'download' && job.segments > 1) {
       job._statusTimer = setInterval(() => this._readPgetStatus(job), 1000);
+    }
+
+    // Folder download: mirror emits per-file meters, not one aggregate, so
+    // measure the local destination as it fills. The remote total is fetched
+    // async (a `du`) so percent can show once known; until then it's bytes +
+    // speed only. Kicked off after a beat so the dest dir exists.
+    if (job.isDir && job.direction === 'download') {
+      setTimeout(() => this._measureRemoteDir(job), 300);
+      job._sizeTimer = setInterval(() => this._pollDirSize(job), 1000);
     }
 
     proc.on('exit', (code) => {
@@ -212,6 +238,10 @@ class TransferManager extends EventEmitter {
       if (job._statusTimer) {
         clearInterval(job._statusTimer);
         job._statusTimer = null;
+      }
+      if (job._sizeTimer) {
+        clearInterval(job._sizeTimer);
+        job._sizeTimer = null;
       }
       if (code === 0) job.segmentProgress = null; // bar renders full via percent
       if (job.status === 'cancelled') {
@@ -280,6 +310,77 @@ class TransferManager extends EventEmitter {
     });
   }
 
+  // Folder download progress: sum the local destination tree and derive
+  // speed/ETA from the byte delta. Percent needs the remote total, filled in
+  // asynchronously by _measureRemoteDir; until then percent stays 0.
+  _pollDirSize(job) {
+    if (job.status !== 'running') return;
+    dirSizeBytes(job.localPath, (bytes) => {
+      if (job.status !== 'running') return;
+      const now = Date.now();
+      job.bytes = Math.max(job.bytes, bytes);
+      if (job._lastSample) {
+        const dt = (now - job._lastSample.t) / 1000;
+        const db = job.bytes - job._lastSample.bytes;
+        if (dt >= 0.5 && db >= 0) {
+          job.speed = formatSpeed(db / dt);
+          if (job.size > 0 && db > 0) {
+            const remaining = Math.max(0, job.size - job.bytes);
+            job.eta = formatEta(remaining / (db / dt));
+          }
+        }
+      }
+      job._lastSample = { bytes: job.bytes, t: now };
+      if (job.size > 0) {
+        job.percent = Math.max(job.percent, Math.min(99, Math.floor((job.bytes / job.size) * 100)));
+      }
+      this._broadcast(job);
+    });
+  }
+
+  // Query the remote folder's total byte size in a throwaway lftp process so
+  // percent can be shown. Best-effort: on any failure percent just stays
+  // indeterminate (bytes + speed still show). Runs alongside the mirror.
+  _measureRemoteDir(job) {
+    if (job.status !== 'running') return;
+    const site = job._site;
+    const scheme = { ftp: 'ftp', ftps: 'ftp', sftp: 'sftp' }[site.protocol] || 'ftp';
+    const url = `${scheme}://${site.host}${site.port ? `:${site.port}` : ''}`;
+    const script = [
+      'set cmd:interactive no',
+      'set sftp:auto-confirm yes',
+      'set net:max-retries 1',
+      'set net:timeout 20',
+      `open -u ${quote(site.username || 'anonymous')},${quote(site.password || '')} ${quote(url)}`,
+      `du -bs ${quote(job.remotePath)}`,
+      'exit',
+    ].join('\n');
+    const proc = spawn('lftp', [], {
+      env: { ...process.env, HOME: process.env.LFTP_HOME || process.env.HOME || '/config' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let out = '';
+    proc.stdout.on('data', (d) => { out += d.toString(); });
+    proc.on('error', () => {});
+    proc.on('exit', () => {
+      // du prints `<bytes>\t<path>`; take the first integer on a data line.
+      for (const line of out.split('\n')) {
+        const m = /^\s*(\d+)\s/.exec(line);
+        if (m) {
+          const total = Number(m[1]);
+          if (total > 0 && job.status === 'running') {
+            job.size = total;
+            log('transfer', `[${job.id}] remote folder size ${total} bytes`);
+            this._broadcast(job);
+          }
+          return;
+        }
+      }
+    });
+    proc.stdin.write(script + '\n');
+    proc.stdin.end();
+  }
+
   cancel(id) {
     const job = this.jobs.get(id);
     if (!job) return false;
@@ -314,6 +415,7 @@ class TransferManager extends EventEmitter {
     return {
       id: job.id,
       direction: job.direction,
+      isDir: job.isDir,
       site: job.site,
       remotePath: job.remotePath,
       localPath: job.localPath,
@@ -335,6 +437,42 @@ class TransferManager extends EventEmitter {
   _broadcast(job) {
     this.emit('update', this.describe(job));
   }
+}
+
+// Recursively sum file sizes under `root` (async, error-tolerant). Used to
+// track how much of a folder download has landed locally.
+function dirSizeBytes(root, cb) {
+  let total = 0;
+  let pending = 1;
+  const done = () => { if (--pending === 0) cb(total); };
+  const walk = (dir) => {
+    fs.readdir(dir, { withFileTypes: true }, (err, entries) => {
+      if (err) return done();
+      pending += entries.length;
+      for (const e of entries) {
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) walk(full);
+        else fs.stat(full, (e2, st) => { if (!e2 && st.isFile()) total += st.size; done(); });
+      }
+      done();
+    });
+  };
+  walk(root);
+}
+
+function formatSpeed(bytesPerSec) {
+  const u = ['B', 'K', 'M', 'G', 'T'];
+  let v = bytesPerSec, i = 0;
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+  return `${v.toFixed(v >= 100 || i === 0 ? 0 : 1)}${u[i]}/s`;
+}
+
+function formatEta(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return null;
+  const s = Math.round(seconds);
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s`;
+  return `${Math.floor(s / 3600)}h${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}m`;
 }
 
 module.exports = { TransferManager, PROGRESS_RE };

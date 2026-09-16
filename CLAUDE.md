@@ -73,7 +73,15 @@ Key gotchas learned the hard way:
   debian-slim), with `stty -echo` so the pty doesn't echo the
   credential-carrying stdin back into the output stream.
 - **lftp has no `pput`** (only `pget` exists). Segmented transfers are
-  download-only; uploads always use plain `put`.
+  download-only; single-file uploads always use plain `put`.
+- **Folders** transfer with `mirror` (recursive), `mirror -R` for upload,
+  `--parallel=<threads>` across files plus `--use-pget-n=<segments>` per
+  file on download. mirror emits per-file meters, not one aggregate, so
+  folder-download progress is measured differently: a poll of the local
+  destination tree (fs) for bytes/speed, and an async `du -bs` on the
+  remote for the total → percent (best-effort; percent stays indeterminate
+  if `du` fails). This is version-independent since it never parses
+  mirror's own output for progress.
 - **lftp's SFTP defaults are slow**: `sftp:size-read/write` (32K) and
   `sftp:max-packets-in-flight` (16) cap each connection at a few MB/s no
   matter the link. Both the session and transfer processes set 128K blocks
@@ -133,9 +141,12 @@ parallex-lftp/
   mirrored to `localStorage` so the page paints right pre-auth. Themes are
   token overrides on `:root[data-theme=...]` in `styles.css`. The brand
   (header wordmark + `favicon.svg`) is fixed blue/green in every theme
-- Upload/download via toolbar buttons acting on the selected file —
-  downloads use lftp's `pget -n <segments>` for real parallel segmented
-  transfers; uploads use plain `put` (lftp has no `pput`)
+- Upload/download via toolbar buttons acting on the selected entry —
+  single-file downloads use `pget -n <segments>` (parallel segmented),
+  single-file uploads use plain `put`; **folders** transfer recursively
+  via `mirror` (`mirror -R` for upload) with `--parallel` across files and
+  `--use-pget-n` on the way down. Folder-download progress is measured by
+  polling the local destination size against the remote total from a `du`
 - Live transfer queue over WebSocket: per-file segment fill visualization,
   percent, speed, ETA
 - mkdir / delete / rename on both local and remote panes

@@ -235,9 +235,11 @@ async function disconnect() {
 
 // ---- transfers -----------------------------------------------------------
 
+const transferable = (e) => e && (e.type === 'file' || e.type === 'dir');
+
 function updateTransferButtons() {
-  $('btn-download').disabled = !(state.sessionId && state.remoteSelected && state.remoteSelected.type === 'file');
-  $('btn-upload').disabled = !(state.sessionId && state.localSelected && state.localSelected.type === 'file');
+  $('btn-download').disabled = !(state.sessionId && transferable(state.remoteSelected));
+  $('btn-upload').disabled = !(state.sessionId && transferable(state.localSelected));
 }
 
 async function startTransfer(direction) {
@@ -249,12 +251,13 @@ async function startTransfer(direction) {
   const localPath = direction === 'download'
     ? joinPath(state.localPath, sel.name)
     : joinPath(state.localPath, sel.name);
+  const isDir = sel.type === 'dir';
   try {
     await api('/transfers', {
       method: 'POST',
-      body: { direction, siteId: state.site.id, remotePath, localPath, size: sel.size },
+      body: { direction, siteId: state.site.id, remotePath, localPath, size: isDir ? 0 : sel.size, isDir },
     });
-    setStatus(`${direction} queued: ${sel.name}`);
+    setStatus(`${direction} queued: ${sel.name}${isDir ? '/' : ''}`);
   } catch (err) {
     setStatus(`transfer: ${err.message}`, true);
   }
@@ -288,11 +291,14 @@ function renderJob(job) {
     fill = Math.max(0, Math.min(1, fill));
     segHtml += `<div class="seg"><div class="fill" style="transform:scaleX(${fill.toFixed(3)})"></div></div>`;
   }
+  // a folder job with no known total yet has nothing to show as a percent
+  const pct = job.isDir && job.percent === 0 && job.status === 'running' ? '···' : `${job.percent}%`;
+  const nameLabel = escapeHtml(job.name) + (job.isDir ? '/' : '');
   el.innerHTML =
-    `<span class="dir-arrow">${arrow}</span>` +
-    `<span class="job-name" title="${escapeHtml(job.remotePath)}">${escapeHtml(job.name)}</span>` +
+    `<span class="dir-arrow">${arrow}${job.isDir ? '&#128193;' : ''}</span>` +
+    `<span class="job-name" title="${escapeHtml(job.remotePath)}">${nameLabel}</span>` +
     `<div class="segbar">${segHtml}</div>` +
-    `<span class="job-pct">${job.percent}%</span>` +
+    `<span class="job-pct">${pct}</span>` +
     `<span class="job-speed">${job.speed || ''}</span>` +
     `<span class="job-eta">${job.eta ? 'eta ' + job.eta : ''}</span>` +
     (['queued', 'running'].includes(job.status)
