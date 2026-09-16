@@ -14,6 +14,17 @@ fi
 
 mkdir -p /config/.ssh /data
 
+# ssh (used by lftp for SFTP) calls getpwuid() on its own uid and aborts
+# with "No user exists for uid N" when the runtime uid has no /etc/passwd
+# entry — which happens with arbitrary PUIDs like Unraid's 99. Ensure a
+# passwd/group entry exists for PUID:PGID (home = /config) before dropping.
+if ! getent group "$PGID" >/dev/null 2>&1; then
+  echo "parallex:x:$PGID:" >> /etc/group
+fi
+if ! getent passwd "$PUID" >/dev/null 2>&1; then
+  echo "parallex:x:$PUID:$PGID:parallex:/config:/bin/sh" >> /etc/passwd
+fi
+
 # chown /config (small: json files + known_hosts). /data gets only its
 # top-level dir chowned (covers docker having created the bind-mount dir
 # as root) — never recursed: it can be huge, new files are created as
