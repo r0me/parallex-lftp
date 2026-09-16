@@ -125,6 +125,11 @@ parallex-lftp/
   client (`hasPassword` flag instead; empty password on edit = keep stored)
 - Global Settings: thread count, segments-per-file, minimum file size
   before segmenting kicks in, optional bandwidth cap
+- Themes: Rack Amber (default), Retro Green (black/green phosphor), Deep
+  Blue — picker in Settings; choice persists in `settings.json` and is
+  mirrored to `localStorage` so the page paints right pre-auth. Themes are
+  token overrides on `:root[data-theme=...]` in `styles.css`. The brand
+  (header wordmark + `favicon.svg`) is fixed blue/green in every theme
 - Upload/download via toolbar buttons acting on the selected file —
   downloads use lftp's `pget -n <segments>` for real parallel segmented
   transfers; uploads use plain `put` (lftp has no `pput`)

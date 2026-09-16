@@ -20,6 +20,9 @@ native `pget`/`pput -n <segments>`.
 - **Live transfer queue** — per-file segment fill visualization, percent,
   speed, and ETA streamed over WebSocket
 - **File operations** — mkdir / rename / delete on both local and remote
+- **Themes** — Rack Amber (default), Retro Green (black/green phosphor),
+  and Deep Blue, switchable from Settings; the choice is saved with your
+  account and applied instantly
 - **Credential hygiene** — site passwords are encrypted at rest
   (AES-256-GCM) in `config/sites.json`, passed to lftp over stdin (never
   CLI args, so they don't show in `ps`), and anything logged or returned

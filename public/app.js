@@ -384,6 +384,7 @@ function startApp(username) {
   setStatus(username ? `signed in as ${username}` : 'ready');
   loadLocal('/');
   connectWs();
+  loadSettings().catch(() => {}); // sync theme from server (covers a new browser)
 }
 
 async function initAuth() {
@@ -482,8 +483,20 @@ async function deleteSite() {
 
 // ---- Settings ------------------------------------------------------------
 
+// Theme is applied via a data attribute; 'amber' is the tokens' default so
+// it clears the attribute. localStorage mirrors the choice per-browser so
+// the page paints correctly before auth/settings are fetched.
+function applyTheme(theme) {
+  const t = ['green', 'blue'].includes(theme) ? theme : 'amber';
+  if (t === 'amber') delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = t;
+  try { localStorage.setItem('plxTheme', t); } catch (_) { /* private mode etc. */ }
+}
+
 async function loadSettings() {
   state.settings = await api('/settings');
+  applyTheme(state.settings.theme);
+  $('st-theme').value = ['green', 'blue'].includes(state.settings.theme) ? state.settings.theme : 'amber';
   $('st-threads').value = state.settings.threads;
   $('st-segments').value = state.settings.segments;
   $('st-segmentMin').value = (state.settings.segmentMinBytes / (1024 * 1024)).toString();
@@ -496,12 +509,14 @@ async function saveSettings(e) {
     state.settings = await api('/settings', {
       method: 'PUT',
       body: {
+        theme: $('st-theme').value,
         threads: Number($('st-threads').value),
         segments: Number($('st-segments').value),
         segmentMinBytes: Math.round(Number($('st-segmentMin').value) * 1024 * 1024),
         bandwidthLimitKBps: Number($('st-bandwidth').value),
       },
     });
+    applyTheme(state.settings.theme);
     closeModal('modal-settings');
     setStatus('settings saved');
   } catch (err) {
@@ -607,5 +622,6 @@ document.addEventListener('DOMContentLoaded', () => {
   $('btn-logout').onclick = logout;
 
   $('remote-empty').hidden = false;
+  try { applyTheme(localStorage.getItem('plxTheme')); } catch (_) { /* default theme */ }
   initAuth();
 });

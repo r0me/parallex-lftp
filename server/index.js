@@ -58,6 +58,7 @@ const sitesStore = new JsonStore(path.join(CONFIG_DIR, 'sites.json'), { sites: [
   }
 }
 const settingsStore = new JsonStore(path.join(CONFIG_DIR, 'settings.json'), {
+  theme: 'amber',
   threads: 2,
   segments: 4,
   segmentMinBytes: 1024 * 1024,

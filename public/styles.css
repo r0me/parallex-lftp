@@ -1,5 +1,7 @@
 /* Parallex LFTP — rack-equipment-inspired dark theme */
 
+/* Default theme: "Rack Amber". Themes re-define these tokens under
+   :root[data-theme=...] below; everything else styles off the tokens. */
 :root {
   --bg: #0d0f12;
   --bg-panel: #14171c;
@@ -12,11 +14,62 @@
   --text-faint: #4d5665;
   --accent: #ff8a2a;
   --accent-dim: #b25d17;
+  --accent-soft: rgba(255, 138, 42, .12);
+  --dir-color: #7ab8f5;
+  --link-color: #b98af5;
+  --danger-border: #7a3030;
+  --danger-bg: rgba(248, 113, 113, .08);
   --green: #4ade80;
   --red: #f87171;
   --amber: #fbbf24;
+  /* brand identity (header mark + wordmark) — fixed blue/green, not themed */
+  --brand-green: #3fd97a;
+  --brand-blue: #4aa8ff;
   --mono: 'IBM Plex Mono', monospace;
   --sans: 'IBM Plex Sans', sans-serif;
+}
+
+/* "Retro Green" — black CRT phosphor */
+:root[data-theme="green"] {
+  --bg: #000000;
+  --bg-panel: #050a06;
+  --bg-raised: #0a140c;
+  --bg-hover: #102014;
+  --border: #123a1c;
+  --border-bright: #1d5c2c;
+  --text: #4bff7e;
+  --text-dim: #2fae56;
+  --text-faint: #1c6b36;
+  --accent: #39ff7a;
+  --accent-dim: #1d8c44;
+  --accent-soft: rgba(57, 255, 122, .12);
+  --dir-color: #8dffb1;
+  --link-color: #3ce8c8;
+  --danger-border: #7a3030;
+  --danger-bg: rgba(248, 113, 113, .08);
+  --green: #4bff7e;
+  --amber: #d8ff5e;
+}
+
+/* "Deep Blue" — navy console */
+:root[data-theme="blue"] {
+  --bg: #06090f;
+  --bg-panel: #0a101c;
+  --bg-raised: #101a2b;
+  --bg-hover: #16233a;
+  --border: #1c2c47;
+  --border-bright: #2a4166;
+  --text: #c9dcf5;
+  --text-dim: #7291b8;
+  --text-faint: #45597a;
+  --accent: #4aa8ff;
+  --accent-dim: #2a6db2;
+  --accent-soft: rgba(74, 168, 255, .13);
+  --dir-color: #8ec8ff;
+  --link-color: #b0a2ff;
+  --danger-border: #7a3040;
+  --danger-bg: rgba(248, 113, 145, .08);
+  --amber: #ffd166;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -43,15 +96,18 @@ body {
   align-items: center;
   gap: 16px;
   padding: 8px 14px;
-  background: linear-gradient(#181c22, #12151a);
+  background: linear-gradient(var(--bg-raised), var(--bg-panel));
   border-bottom: 1px solid var(--border-bright);
   flex-shrink: 0;
 }
 
+/* brand identity: fixed blue/green in every theme (matches favicon.svg) */
 .brand { display: flex; align-items: center; gap: 10px; }
 .brand-mark {
-  width: 10px; height: 26px;
-  background: repeating-linear-gradient(0deg, var(--accent) 0 3px, transparent 3px 6px);
+  width: 12px; height: 26px;
+  background:
+    repeating-linear-gradient(0deg, var(--brand-green) 0 3px, transparent 3px 6px) left / 5px 100% no-repeat,
+    repeating-linear-gradient(0deg, var(--brand-blue) 0 3px, transparent 3px 6px) right / 5px 100% no-repeat;
   border-radius: 1px;
 }
 .brand h1 {
@@ -59,9 +115,9 @@ body {
   font-size: 16px;
   letter-spacing: 3px;
   font-weight: 600;
-  color: var(--text);
+  color: var(--brand-green);
 }
-.brand-sub { color: var(--accent); margin-left: 6px; font-weight: 400; }
+.brand-sub { color: var(--brand-blue); margin-left: 6px; font-weight: 400; }
 
 .conn-strip {
   display: flex; align-items: center; gap: 8px;
@@ -74,7 +130,7 @@ body {
 }
 .led {
   width: 8px; height: 8px; border-radius: 50%;
-  background: #3a3f4a;
+  background: var(--border-bright);
   box-shadow: 0 0 4px transparent;
 }
 .led.on { background: var(--green); box-shadow: 0 0 6px var(--green); }
@@ -101,9 +157,9 @@ body {
 .btn:hover:not(:disabled) { background: var(--bg-hover); border-color: var(--text-faint); }
 .btn:disabled { opacity: .35; cursor: not-allowed; }
 .btn.accent { border-color: var(--accent-dim); color: var(--accent); }
-.btn.accent:hover:not(:disabled) { background: rgba(255,138,42,.1); border-color: var(--accent); }
-.btn.danger { border-color: #7a3030; color: var(--red); }
-.btn.danger:hover:not(:disabled) { background: rgba(248,113,113,.08); }
+.btn.accent:hover:not(:disabled) { background: var(--accent-soft); border-color: var(--accent); }
+.btn.danger { border-color: var(--danger-border); color: var(--red); }
+.btn.danger:hover:not(:disabled) { background: var(--danger-bg); }
 .btn.sm { padding: 3px 8px; font-size: 10px; }
 .btn.full { width: 100%; margin-top: 8px; }
 
@@ -186,11 +242,11 @@ body {
 
 .filelist tbody tr { cursor: pointer; }
 .filelist tbody tr:hover { background: var(--bg-hover); }
-.filelist tbody tr.selected { background: rgba(255,138,42,.12); outline: 1px solid var(--accent-dim); outline-offset: -1px; }
-.filelist tr.is-dir td.name { color: #7ab8f5; }
-.filelist tr.is-link td.name { color: #b98af5; }
+.filelist tbody tr.selected { background: var(--accent-soft); outline: 1px solid var(--accent-dim); outline-offset: -1px; }
+.filelist tr.is-dir td.name { color: var(--dir-color); }
+.filelist tr.is-link td.name { color: var(--link-color); }
 .icon { display: inline-block; width: 16px; color: var(--text-faint); }
-.is-dir .icon { color: #7ab8f5; }
+.is-dir .icon { color: var(--dir-color); }
 
 .pane-empty {
   position: absolute; inset: 40px 0 0 0;
@@ -322,7 +378,7 @@ body {
 }
 .site-list li:last-child { border-bottom: none; }
 .site-list li:hover { background: var(--bg-hover); }
-.site-list li.selected { background: rgba(255,138,42,.12); color: var(--accent); }
+.site-list li.selected { background: var(--accent-soft); color: var(--accent); }
 .site-list li .site-proto { color: var(--text-faint); font-size: 10px; margin-left: 6px; }
 .site-list-empty { padding: 10px; color: var(--text-faint); font-size: 11px; }
 

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="6" fill="#0d0f12"/>
+  <!-- green stripe column -->
+  <g fill="#3fd97a">
+    <rect x="8" y="6" width="6" height="3" rx="1"/>
+    <rect x="8" y="12" width="6" height="3" rx="1"/>
+    <rect x="8" y="18" width="6" height="3" rx="1"/>
+    <rect x="8" y="24" width="6" height="3" rx="1"/>
+  </g>
+  <!-- blue stripe column -->
+  <g fill="#4aa8ff">
+    <rect x="18" y="6" width="6" height="3" rx="1"/>
+    <rect x="18" y="12" width="6" height="3" rx="1"/>
+    <rect x="18" y="18" width="6" height="3" rx="1"/>
+    <rect x="18" y="24" width="6" height="3" rx="1"/>
+  </g>
+</svg>
