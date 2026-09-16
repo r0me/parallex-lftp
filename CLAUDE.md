@@ -154,6 +154,9 @@ parallex-lftp/
   polling the local destination size against the remote total from a `du`
 - Live transfer queue over WebSocket: per-file segment fill visualization,
   percent, speed, ETA
+- Multi-select in both panes: plain click selects one, ctrl/cmd-click
+  toggles, shift-click selects a contiguous range; download/upload and
+  delete act on the whole selection (rename requires exactly one)
 - mkdir / delete / rename on both local and remote panes
 - Request + connection lifecycle logging for debuggability
 - Credential redaction in all logs and error responses

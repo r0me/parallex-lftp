@@ -12,8 +12,12 @@ const state = {
   remotePath: '/',
   localEntries: [],
   remoteEntries: [],
-  localSelected: null, // entry
-  remoteSelected: null,
+  // multi-select: a set of selected row indices + a range anchor, per pane;
+  // the derived arrays hold the selected entry objects
+  localSel: { set: new Set(), anchor: null },
+  remoteSel: { set: new Set(), anchor: null },
+  localSelection: [],
+  remoteSelection: [],
   sites: [],
   settings: null,
   jobs: new Map(),
@@ -117,7 +121,17 @@ function renderList(tbodyId, emptyId, entries, path, opts) {
   empty.hidden = entries.length > 0;
   if (entries.length === 0) empty.textContent = 'empty directory';
 
-  for (const entry of entries) {
+  const sel = opts.sel;
+  const rows = [];
+  const applyHighlight = () => {
+    rows.forEach((r, i) => r.classList.toggle('selected', sel.set.has(i)));
+  };
+  const fireChange = () => {
+    const selected = [...sel.set].sort((a, b) => a - b).map((i) => entries[i]).filter(Boolean);
+    opts.onChange(selected);
+  };
+
+  entries.forEach((entry, i) => {
     const tr = document.createElement('tr');
     tr.className = entry.type === 'dir' ? 'is-dir' : entry.type === 'link' ? 'is-link' : '';
     const icon = entry.type === 'dir' ? '&#9646;' : entry.type === 'link' ? '&#8618;' : '&#9642;';
@@ -125,16 +139,31 @@ function renderList(tbodyId, emptyId, entries, path, opts) {
       `<td class="name"><span class="icon">${icon}</span>${escapeHtml(entry.name)}</td>` +
       `<td class="col-size">${entry.type === 'dir' ? '' : fmtSize(entry.size)}</td>` +
       `<td class="col-date">${entry.mtime || ''}</td>`;
-    tr.onclick = () => {
-      tbody.querySelectorAll('tr.selected').forEach((r) => r.classList.remove('selected'));
-      tr.classList.add('selected');
-      opts.onSelect(entry);
+    tr.onclick = (e) => {
+      if (e.shiftKey && sel.anchor != null) {
+        // contiguous range from the anchor; anchor stays put
+        const lo = Math.min(sel.anchor, i);
+        const hi = Math.max(sel.anchor, i);
+        sel.set = new Set();
+        for (let k = lo; k <= hi; k++) sel.set.add(k);
+      } else if (e.ctrlKey || e.metaKey) {
+        if (sel.set.has(i)) sel.set.delete(i);
+        else sel.set.add(i);
+        sel.anchor = i;
+      } else {
+        sel.set = new Set([i]);
+        sel.anchor = i;
+      }
+      applyHighlight();
+      fireChange();
     };
     tr.ondblclick = () => {
       if (entry.type === 'dir') opts.onOpenDir(joinPath(path, entry.name));
     };
+    rows.push(tr);
     tbody.appendChild(tr);
-  }
+  });
+  applyHighlight();
 }
 
 function escapeHtml(s) {
@@ -148,11 +177,13 @@ async function loadLocal(path = state.localPath) {
     const data = await api(`/local/list?path=${encodeURIComponent(path)}`);
     state.localPath = data.path;
     state.localEntries = data.entries;
-    state.localSelected = null;
+    state.localSel = { set: new Set(), anchor: null };
+    state.localSelection = [];
     updateTransferButtons();
     renderBreadcrumb($('local-breadcrumb'), data.path, loadLocal);
     renderList('local-list', 'local-empty', data.entries, data.path, {
-      onSelect: (e) => { state.localSelected = e; updateTransferButtons(); },
+      sel: state.localSel,
+      onChange: (entries) => { state.localSelection = entries; updateTransferButtons(); },
       onOpenDir: loadLocal,
     });
   } catch (err) {
@@ -176,11 +207,13 @@ async function loadRemote(path) {
       : await api(`/remote/list?sessionId=${encodeURIComponent(state.sessionId)}&path=.`);
     state.remotePath = data.path;
     state.remoteEntries = data.entries;
-    state.remoteSelected = null;
+    state.remoteSel = { set: new Set(), anchor: null };
+    state.remoteSelection = [];
     updateTransferButtons();
     renderBreadcrumb($('remote-breadcrumb'), data.path, (p) => loadRemote(p));
     renderList('remote-list', 'remote-empty', data.entries, data.path, {
-      onSelect: (e) => { state.remoteSelected = e; updateTransferButtons(); },
+      sel: state.remoteSel,
+      onChange: (entries) => { state.remoteSelection = entries; updateTransferButtons(); },
       onOpenDir: (p) => loadRemote(p),
     });
     setConnState('on', `${state.site.name} — ${data.path}`);
@@ -238,29 +271,32 @@ async function disconnect() {
 const transferable = (e) => e && (e.type === 'file' || e.type === 'dir');
 
 function updateTransferButtons() {
-  $('btn-download').disabled = !(state.sessionId && transferable(state.remoteSelected));
-  $('btn-upload').disabled = !(state.sessionId && transferable(state.localSelected));
+  $('btn-download').disabled = !(state.sessionId && state.remoteSelection.some(transferable));
+  $('btn-upload').disabled = !(state.sessionId && state.localSelection.some(transferable));
 }
 
 async function startTransfer(direction) {
-  const sel = direction === 'download' ? state.remoteSelected : state.localSelected;
-  if (!sel || !state.site) return;
-  const remotePath = direction === 'download'
-    ? joinPath(state.remotePath, sel.name)
-    : joinPath(state.remotePath, sel.name);
-  const localPath = direction === 'download'
-    ? joinPath(state.localPath, sel.name)
-    : joinPath(state.localPath, sel.name);
-  const isDir = sel.type === 'dir';
-  try {
-    await api('/transfers', {
-      method: 'POST',
-      body: { direction, siteId: state.site.id, remotePath, localPath, size: isDir ? 0 : sel.size, isDir },
-    });
-    setStatus(`${direction} queued: ${sel.name}${isDir ? '/' : ''}`);
-  } catch (err) {
-    setStatus(`transfer: ${err.message}`, true);
-  }
+  if (!state.site) return;
+  const all = direction === 'download' ? state.remoteSelection : state.localSelection;
+  const items = all.filter(transferable);
+  const skipped = all.length - items.length; // e.g. symlinks
+  if (items.length === 0) return;
+  let ok = 0;
+  await Promise.all(items.map(async (sel) => {
+    const remotePath = joinPath(state.remotePath, sel.name);
+    const localPath = joinPath(state.localPath, sel.name);
+    const isDir = sel.type === 'dir';
+    try {
+      await api('/transfers', {
+        method: 'POST',
+        body: { direction, siteId: state.site.id, remotePath, localPath, size: isDir ? 0 : sel.size, isDir },
+      });
+      ok++;
+    } catch (err) {
+      setStatus(`transfer ${sel.name}: ${err.message}`, true);
+    }
+  }));
+  if (ok) setStatus(`${direction} queued: ${ok} item${ok === 1 ? '' : 's'}${skipped ? ` (${skipped} skipped)` : ''}`);
 }
 
 function renderJob(job) {
@@ -546,19 +582,23 @@ async function paneAction(act) {
         return loadLocal();
       }
       case 'local-rename': {
-        if (!state.localSelected) return setStatus('select a local entry first', true);
-        const name = prompt('Rename to:', state.localSelected.name);
-        if (!name || name === state.localSelected.name) return;
+        if (state.localSelection.length !== 1) return setStatus('select exactly one entry to rename', true);
+        const cur = state.localSelection[0];
+        const name = prompt('Rename to:', cur.name);
+        if (!name || name === cur.name) return;
         await api('/local/rename', {
           method: 'POST',
-          body: { from: joinPath(state.localPath, state.localSelected.name), to: joinPath(state.localPath, name) },
+          body: { from: joinPath(state.localPath, cur.name), to: joinPath(state.localPath, name) },
         });
         return loadLocal();
       }
       case 'local-delete': {
-        if (!state.localSelected) return setStatus('select a local entry first', true);
-        if (!confirm(`Delete ${state.localSelected.name}?`)) return;
-        await api('/local/delete', { method: 'POST', body: { path: joinPath(state.localPath, state.localSelected.name) } });
+        const items = state.localSelection;
+        if (items.length === 0) return setStatus('select a local entry first', true);
+        if (!confirm(`Delete ${items.length} item${items.length === 1 ? '' : 's'}?`)) return;
+        for (const it of items) {
+          await api('/local/delete', { method: 'POST', body: { path: joinPath(state.localPath, it.name) } });
+        }
         return loadLocal();
       }
       case 'remote-refresh': return loadRemote();
@@ -569,22 +609,26 @@ async function paneAction(act) {
         return loadRemote();
       }
       case 'remote-rename': {
-        if (!state.remoteSelected) return setStatus('select a remote entry first', true);
-        const name = prompt('Rename to:', state.remoteSelected.name);
-        if (!name || name === state.remoteSelected.name) return;
+        if (state.remoteSelection.length !== 1) return setStatus('select exactly one entry to rename', true);
+        const cur = state.remoteSelection[0];
+        const name = prompt('Rename to:', cur.name);
+        if (!name || name === cur.name) return;
         await api('/remote/rename', {
           method: 'POST',
-          body: { sessionId: state.sessionId, from: state.remoteSelected.name, to: name },
+          body: { sessionId: state.sessionId, from: cur.name, to: name },
         });
         return loadRemote();
       }
       case 'remote-delete': {
-        if (!state.remoteSelected) return setStatus('select a remote entry first', true);
-        if (!confirm(`Delete ${state.remoteSelected.name} from the server?`)) return;
-        await api('/remote/delete', {
-          method: 'POST',
-          body: { sessionId: state.sessionId, path: state.remoteSelected.name, isDir: state.remoteSelected.type === 'dir' },
-        });
+        const items = state.remoteSelection;
+        if (items.length === 0) return setStatus('select a remote entry first', true);
+        if (!confirm(`Delete ${items.length} item${items.length === 1 ? '' : 's'} from the server?`)) return;
+        for (const it of items) {
+          await api('/remote/delete', {
+            method: 'POST',
+            body: { sessionId: state.sessionId, path: it.name, isDir: it.type === 'dir' },
+          });
+        }
         return loadRemote();
       }
     }

@@ -220,7 +220,7 @@ body {
 
 .filelist-wrap { flex: 1; overflow-y: auto; position: relative; }
 
-.filelist { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12px; }
+.filelist { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12px; user-select: none; -webkit-user-select: none; }
 .filelist thead th {
   position: sticky; top: 0;
   background: var(--bg-panel);

@@ -23,6 +23,8 @@ native `pget -n <segments>`.
   (mirror runs `--verbose`, so `docker logs` shows each file too)
 - **Live transfer queue** — per-file segment fill visualization, percent,
   speed, and ETA streamed over WebSocket
+- **Multi-select** — shift-click for a range, ctrl/cmd-click to toggle;
+  download, upload, and delete act on every selected file/folder at once
 - **File operations** — mkdir / rename / delete on both local and remote
 - **Themes** — Rack Amber (default), Retro Green (black/green phosphor),
   and Deep Blue, switchable from Settings; the choice is saved with your
