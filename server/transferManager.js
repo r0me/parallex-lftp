@@ -1,23 +1,36 @@
 'use strict';
 
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const crypto = require('crypto');
 const path = require('path');
 const { EventEmitter } = require('events');
 const { quote } = require('./lftpSession');
 const { log, redact } = require('./logger');
 
-// lftp's progress meter for pget/pput looks like:
+// lftp only renders its progress meter when stdout is a terminal — with
+// piped stdio it prints nothing at all, so progress stays blank. Run each
+// transfer under a pty via `script` (bsdutils, present on debian-slim)
+// when available; fall back to a plain pipe (no live progress) otherwise.
+const HAS_SCRIPT = (() => {
+  const r = spawnSync('script', ['--version'], { stdio: 'ignore' });
+  return !r.error && r.status === 0;
+})();
+
+// Meter lines look like:
 //   `file.bin' at 52428800 (25%) 10.4M/s eta:36s [Receiving data]
+//   `file.bin', got 52428800 of 209715200 (25%) 10.4M/s eta:36s
 // NOTE: the meter text format can vary by lftp version. If live progress
 // stops updating after a base-image change, check `docker logs` for the
 // actual meter line and adjust this regex.
 const PROGRESS_RE =
-  /at\s+(\d+)\s+\((\d+)%\)(?:\s+([\d.]+[KMGT]?i?B?\/s|[\d.]+\s*[KMGT]?b\/s))?(?:\s+eta:?\s*([\dhms:]+))?/i;
+  /(?:\bat|got)\s+(\d+)(?:\s+of\s+\d+)?\s+\((\d+)%\)(?:\s+([\d.]+\s*[KMGT]?i?[Bb]?\/s))?(?:.*?eta:?\s*([\dhms:]+))?/i;
 
-// Fallback: chunk lines like `\chunk at 1048576` (segment offsets) — used
-// only to mark segment activity, not overall percent.
+// Segment/chunk status lines like `\chunk at 1048576` — activity noise,
+// not overall percent.
 const SEGMENT_RE = /^\\(?:chunk|transfer)\b/i;
+
+// pty output can carry terminal escape sequences — strip before parsing.
+const ANSI_RE = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)/g;
 
 /**
  * Runs each transfer as its own short-lived lftp process so long transfers
@@ -49,7 +62,9 @@ class TransferManager extends EventEmitter {
       remotePath,
       localPath,
       size,
-      segments: size >= effective.segmentMinBytes ? effective.segments : 1,
+      // lftp has no pput — only downloads can be segmented
+      segments:
+        direction === 'download' && size >= effective.segmentMinBytes ? effective.segments : 1,
       effective,
       status: 'queued', // queued | running | done | error | cancelled
       percent: 0,
@@ -110,10 +125,8 @@ class TransferManager extends EventEmitter {
           ? `pget -n ${job.segments} ${quote(job.remotePath)} -o ${quote(job.localPath)}`
           : `get ${quote(job.remotePath)} -o ${quote(job.localPath)}`;
     } else {
-      xfer =
-        job.segments > 1
-          ? `pput -n ${job.segments} ${quote(job.localPath)} -o ${quote(job.remotePath)}`
-          : `put ${quote(job.localPath)} -o ${quote(job.remotePath)}`;
+      // lftp has no pput; uploads are always single-stream
+      xfer = `put ${quote(job.localPath)} -o ${quote(job.remotePath)}`;
     }
 
     const script = [
@@ -125,17 +138,32 @@ class TransferManager extends EventEmitter {
     ].join('\n');
 
     log('transfer', `[${job.id}] starting: ${xfer}`);
-    const proc = spawn('lftp', [], {
-      env: { ...process.env, HOME: process.env.LFTP_HOME || process.env.HOME || '/config' },
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
+    const env = {
+      ...process.env,
+      HOME: process.env.LFTP_HOME || process.env.HOME || '/config',
+      TERM: 'dumb', // keep the pty meter plain \r rewrites, not cursor escapes
+    };
+    // Under `script`, lftp sees a terminal and renders its progress meter.
+    // stty -echo stops the pty echoing our stdin (which carries credentials)
+    // back into the output stream.
+    const proc = HAS_SCRIPT
+      ? spawn('script', ['-qefc', 'stty -echo 2>/dev/null; exec lftp', '/dev/null'], {
+          env,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        })
+      : spawn('lftp', [], { env, stdio: ['pipe', 'pipe', 'pipe'] });
     job.proc = proc;
-    proc.stdin.write(script + '\n');
-    proc.stdin.end();
+    // Small delay so stty -echo takes effect before credentials hit the pty.
+    setTimeout(() => {
+      try {
+        proc.stdin.write(script + '\n');
+        proc.stdin.end();
+      } catch (_) { /* process already died; exit handler reports it */ }
+    }, HAS_SCRIPT ? 75 : 0);
 
     let errText = '';
     const onData = (d) => {
-      const text = d.toString();
+      const text = d.toString().replace(ANSI_RE, '');
       // Meter lines end with \r; split on both.
       for (const line of text.split(/[\r\n]+/)) {
         if (!line.trim()) continue;

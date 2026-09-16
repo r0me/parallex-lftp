@@ -57,6 +57,20 @@ Key gotchas learned the hard way:
 - Any lftp output that might contain `user:pass@` gets run through a
   `redact()` helper (`server/logger.js`) before it's logged or returned to
   the client.
+- `pwd` output (post-cd) is a **percent-encoded URL**: spaces come back as
+  `%20`, and `.` segments / trailing slashes from cd arguments are kept
+  verbatim. `stripUrlToPath` decodes and path-normalizes it — without that,
+  paths built from cwd + entry name (e.g. transfer sources) are half
+  encoded and lftp fails with "No such file".
+- Real `cls` prints **directory names with a trailing slash**; the parser
+  strips it or the slash gets baked into every built path.
+- lftp only renders its **progress meter when stdout is a tty** — with
+  piped stdio it prints nothing, so transfer progress stays blank forever.
+  Transfer jobs run under a pty via `script -qefc` (bsdutils, present on
+  debian-slim), with `stty -echo` so the pty doesn't echo the
+  credential-carrying stdin back into the output stream.
+- **lftp has no `pput`** (only `pget` exists). Segmented transfers are
+  download-only; uploads always use plain `put`.
 
 ## File structure
 
@@ -94,8 +108,9 @@ parallex-lftp/
   client (`hasPassword` flag instead; empty password on edit = keep stored)
 - Global Settings: thread count, segments-per-file, minimum file size
   before segmenting kicks in, optional bandwidth cap
-- Upload/download via toolbar buttons acting on the selected file, using
-  lftp's `pget`/`pput -n <segments>` for real parallel segmented transfers
+- Upload/download via toolbar buttons acting on the selected file —
+  downloads use lftp's `pget -n <segments>` for real parallel segmented
+  transfers; uploads use plain `put` (lftp has no `pput`)
 - Live transfer queue over WebSocket: per-file segment fill visualization,
   percent, speed, ETA
 - mkdir / delete / rename on both local and remote panes

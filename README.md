@@ -14,8 +14,9 @@ native `pget`/`pput -n <segments>`.
   overrides), stored in `config/sites.json`
 - **Transfer settings** — concurrent transfer count, segments per file,
   minimum file size before segmenting kicks in, optional bandwidth cap
-- **Segmented parallel transfers** — downloads/uploads use `pget`/`pput
-  -n <segments>` for multi-connection transfers of large files
+- **Segmented parallel downloads** — large downloads use `pget -n
+  <segments>` for multi-connection transfers (uploads use plain `put`;
+  lftp has no segmented upload for a single file)
 - **Live transfer queue** — per-file segment fill visualization, percent,
   speed, and ETA streamed over WebSocket
 - **File operations** — mkdir / rename / delete on both local and remote

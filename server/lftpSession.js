@@ -2,6 +2,7 @@
 
 const { spawn } = require('child_process');
 const crypto = require('crypto');
+const path = require('path');
 const { EventEmitter } = require('events');
 const { log, redact } = require('./logger');
 
@@ -143,7 +144,7 @@ class LftpSession extends EventEmitter {
     if (err) throw sessionError(err);
     const pwd = pwdOut.trim().split('\n').pop();
     // Defensive: even post-cd, never accept a URL-shaped pwd (could carry creds).
-    this.cwd = /:\/\//.test(pwd) ? stripUrlToPath(pwd) : pwd;
+    this.cwd = /:\/\//.test(pwd) ? stripUrlToPath(pwd) : normalizeRemotePath(pwd);
 
     const clsOut = await this.exec(clsCommand('.'), { timeout: 45_000 });
     err = detectLftpError(clsOut);
@@ -226,7 +227,7 @@ class LftpSession extends EventEmitter {
     const pwdErr = detectLftpError(pwdOut);
     if (pwdErr) throw sessionError(pwdErr);
     const pwd = pwdOut.trim().split('\n').pop();
-    this.cwd = /:\/\//.test(pwd) ? stripUrlToPath(pwd) : pwd;
+    this.cwd = /:\/\//.test(pwd) ? stripUrlToPath(pwd) : normalizeRemotePath(pwd);
     return this.cwd;
   }
 
@@ -291,6 +292,9 @@ function parseClsOutput(out) {
         name = name.slice(0, arrow);
       }
     }
+    // real lftp cls prints directory names with a trailing slash — strip
+    // it, or every path built from the name gets a stray / baked in
+    if (m[1] === 'd') name = name.replace(/\/+$/, '');
     if (name === '.' || name === '..') continue;
     entries.push({
       name,
@@ -313,14 +317,27 @@ function quote(s) {
 }
 
 // pwd can return the raw connection URL before a real cd; strip it down to
-// a bare path so credentials never reach the client.
+// a bare path so credentials never reach the client. Real lftp also
+// percent-encodes the URL (spaces become %20) and preserves `.` segments
+// and trailing slashes from cd arguments, so decode and normalize —
+// otherwise paths built from cwd + entry name point at nothing.
 function stripUrlToPath(url) {
   try {
     const m = /^[a-z+]+:\/\/[^/]*(\/.*)?$/i.exec(url.trim());
-    return (m && m[1]) || '/';
+    let p = (m && m[1]) || '/';
+    try {
+      p = decodeURIComponent(p);
+    } catch (_) { /* not valid percent-encoding — keep raw */ }
+    return normalizeRemotePath(p);
   } catch (_) {
     return '/';
   }
+}
+
+// Collapse `.` segments, duplicate and trailing slashes: /a/./b/ -> /a/b
+function normalizeRemotePath(p) {
+  const norm = path.posix.normalize(String(p));
+  return norm.length > 1 ? norm.replace(/\/+$/, '') : norm;
 }
 
 function sessionError(err) {
