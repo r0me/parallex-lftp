@@ -2,6 +2,7 @@
 
 const express = require('express');
 const { log } = require('../logger');
+const { decrypt } = require('../secretStore');
 
 // Remote browsing/ops via sessionManager. Connect creates a persistent
 // lftp session (validated with a real cd -> pwd -> cls round-trip inside
@@ -18,7 +19,11 @@ module.exports = function remoteRouter(sessionManager, sitesStore, settingsStore
         return res.status(400).json({ error: 'SSH key auth is not wired up yet — use password auth' });
       }
       log('remote', `connect requested for site "${site.name}"`);
-      const { info } = await sessionManager.connect(site, settingsStore.read());
+      // decrypt only in memory, for the lftp process — never written back
+      const { info } = await sessionManager.connect(
+        { ...site, password: decrypt(site.password) },
+        settingsStore.read()
+      );
       res.json({ sessionId: info.id, cwd: info.cwd, site: { id: site.id, name: site.name } });
     } catch (err) {
       next(err);

@@ -20,7 +20,8 @@ native `pget`/`pput -n <segments>`.
 - **Live transfer queue** — per-file segment fill visualization, percent,
   speed, and ETA streamed over WebSocket
 - **File operations** — mkdir / rename / delete on both local and remote
-- **Credential hygiene** — passwords are passed to lftp over stdin (never
+- **Credential hygiene** — site passwords are encrypted at rest
+  (AES-256-GCM) in `config/sites.json`, passed to lftp over stdin (never
   CLI args, so they don't show in `ps`), and anything logged or returned
   to the browser is run through a redaction pass
 
@@ -83,9 +84,16 @@ prompt, so SFTP uses **trust-on-first-use** (`sftp:auto-confirm yes`).
 - **No auth on the web UI itself.** Anyone who can reach port 7609 can use
   every saved site. Put it behind a reverse proxy with auth, or keep it
   localhost/VPN-only.
-- **Site passwords are stored in plaintext** in `config/sites.json`. Fine
-  for a homelab behind your own firewall; don't share that folder or commit
-  it anywhere. (`config/` and `data/` are gitignored.)
+- **Credential encryption is at-rest, not end-to-end.** Site passwords in
+  `config/sites.json` are AES-256-GCM encrypted. The key comes from the
+  `PARALLEX_SECRET` env var when set (recommended — put it in a `.env`
+  file; the key then never touches the `config/` volume), otherwise from
+  an auto-generated `config/.secret` keyfile (mode 600). Existing
+  plaintext files are migrated automatically on boot, and setting
+  `PARALLEX_SECRET` later transparently re-encrypts. Someone with both
+  the config folder **and** the secret can still decrypt — this protects
+  a leaked/backed-up/committed `sites.json`, not a fully compromised
+  host. (`config/` and `data/` are gitignored regardless.)
 - **SSH key auth isn't wired up yet** — the schema/UI has a spot for it
   (`authType: 'key'`), but only password auth works end-to-end.
 - **lftp's progress-meter text can vary by version.** If live progress

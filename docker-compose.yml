@@ -10,6 +10,11 @@ services:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
       - UMASK=${UMASK:-022}
+      # optional: credential-encryption secret. If set (e.g. in a .env
+      # file), site passwords are encrypted with a key derived from it and
+      # the key never touches the ./config volume. If unset, a random
+      # keyfile at ./config/.secret is used instead.
+      - PARALLEX_SECRET=${PARALLEX_SECRET:-}
     volumes:
       # what the LOCAL pane browses
       - ./data:/data

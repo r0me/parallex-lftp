@@ -30,7 +30,33 @@ try {
   fs.chmodSync(path.join(CONFIG_DIR, '.ssh'), 0o700);
 } catch (_) { /* best effort */ }
 
+const secretStore = require('./secretStore');
+secretStore.init(CONFIG_DIR);
+
 const sitesStore = new JsonStore(path.join(CONFIG_DIR, 'sites.json'), { sites: [] });
+
+// One-time migration: encrypt any plaintext credentials from older
+// versions, and re-encrypt keyfile-encrypted values with PARALLEX_SECRET
+// once one is set. Unreadable values are left alone and surface as a
+// clear 409 at connect time.
+{
+  const data = sitesStore.read();
+  let migrated = 0;
+  for (const site of data.sites) {
+    for (const field of ['password', 'privateKey']) {
+      if (site[field] == null) continue;
+      const r = secretStore.migrateValue(site[field]);
+      if (r.changed) {
+        site[field] = r.value;
+        migrated++;
+      }
+    }
+  }
+  if (migrated > 0) {
+    sitesStore.write(data);
+    log('secrets', `encrypted ${migrated} stored credential(s) in sites.json`);
+  }
+}
 const settingsStore = new JsonStore(path.join(CONFIG_DIR, 'settings.json'), {
   threads: 2,
   segments: 4,

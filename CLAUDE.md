@@ -30,6 +30,7 @@ web app instead of a desktop app.
 | Credential handling | Sent via `open -u user,pass` over **stdin**, never as CLI args | Keeps credentials out of `ps` output |
 | SFTP host keys | Trust-on-first-use (`sftp:auto-confirm yes`), `HOME` pointed at the persistent `/config` volume | No TTY exists to answer an interactive host-key prompt; TOFU is the standard non-interactive equivalent, and pointing `HOME` at a mounted volume means an accepted key survives container rebuilds |
 | Site storage | JSON file (`/config/sites.json`) | Simple, human-inspectable, good enough for a single-user tool |
+| Credential storage | AES-256-GCM at rest (`server/secretStore.js`), stored as `enc:v1:<b64(iv\|tag\|ct)>` | Key from `PARALLEX_SECRET` env (scrypt-derived; keeps the key out of the volume) or an auto-generated `/config/.secret` keyfile (0600). Boot migration encrypts legacy plaintext and re-encrypts keyfile-era values once a secret is set (decrypt tries primary key, then keyfile fallback). Decrypted only in memory at connect/enqueue; never in API responses or logs. At-rest protection only — config volume + secret together still decrypt |
 | Settings storage | JSON file (`/config/settings.json`) | Same reasoning |
 | Transfer progress | WebSocket broadcast from a `TransferManager` EventEmitter | Simple pub-sub; fine for a single-user tool with no auth boundaries to worry about between clients |
 | File ownership | `entrypoint.sh` drops root to `PUID:PGID` (default 1000:1000) via `setpriv` before exec'ing node | Downloads into the mounted `./data` are editable on the host without sudo (LinuxServer.io convention). Entrypoint chowns `/config` (small) but **never recurses `/data`** (can be huge; new files are created as PUID:PGID anyway). `UMASK` env sets creation perms. `setpriv` comes with util-linux, already in debian-slim |
@@ -90,8 +91,9 @@ parallex-lftp/
   Dockerfile              node:20-slim + lftp + openssh-client
   docker-compose.yml      port 7609, mounts ./data -> /data, ./config -> /config
   server/
-    index.js              Express app, static frontend, WebSocket broadcast, HOME/.ssh setup
+    index.js              Express app, static frontend, WebSocket broadcast, HOME/.ssh setup, credential migration
     logger.js             log() + redact() helpers (credential scrubbing)
+    secretStore.js        AES-256-GCM credential encryption at rest (env secret or keyfile)
     lftpSession.js        Persistent lftp session wrapper (sentinel protocol, error detection)
     sessionManager.js     Tracks active LftpSession instances by session id
     transferManager.js    Per-job lftp processes for pget/pput, progress parsing, thread-limited queue
@@ -133,9 +135,12 @@ parallex-lftp/
 - **No auth on the web UI itself.** Anyone reaching port 7609 can use every
   saved site. Needs a reverse proxy with auth (or localhost/VPN-only
   deployment) before being exposed anywhere untrusted.
-- **Site passwords stored in plaintext** in `config/sites.json`. Fine for a
-  homelab behind your own firewall; not fine to share that folder or commit
-  it to a repo (`config/` is gitignored for this reason).
+- **Credential encryption is at-rest only** (see the decision table): a
+  leaked `sites.json` alone is useless, but config volume + secret
+  together still decrypt. `PARALLEX_SECRET` in a `.env` file is the
+  recommended setup. If the secret is lost/changed with no keyfile
+  fallback, connect returns a clear 409 telling the user to re-enter that
+  site's password. `config/` stays gitignored regardless.
 - **SSH key auth has a spot in the schema/UI (`authType: 'key'`) but isn't
   wired up end-to-end** — only password auth is functional right now. The
   connect route rejects `authType: 'key'` sites with a clear error.

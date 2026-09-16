@@ -2,17 +2,19 @@
 
 const express = require('express');
 const crypto = require('crypto');
+const { encrypt } = require('../secretStore');
 
 // Site Manager CRUD -> /config/sites.json
-// NOTE: passwords are stored in plaintext in that file — homelab tradeoff,
-// documented in the README. Responses never include the password; the
-// frontend sends `password: null` to mean "keep the stored one".
+// Passwords (and private keys, once key auth lands) are encrypted at rest
+// via secretStore before hitting disk. Responses never include the
+// password; the frontend sends `password: null` to mean "keep the stored
+// one".
 module.exports = function sitesRouter(store) {
   const router = express.Router();
 
   const publicSite = (s) => {
-    const { password, ...rest } = s;
-    return { ...rest, hasPassword: Boolean(password) };
+    const { password, privateKey, ...rest } = s;
+    return { ...rest, hasPassword: Boolean(password), hasPrivateKey: Boolean(privateKey) };
   };
 
   router.get('/', (_req, res) => {
@@ -69,10 +71,13 @@ function normalize(site) {
     port: site.port ? Number(site.port) : null,
     protocol: ['ftp', 'ftps', 'sftp'].includes(site.protocol) ? site.protocol : 'ftp',
     username: site.username || '',
-    password: site.password || '',
+    // encrypt() is a no-op on empty and on already-encrypted values (the
+    // keep-stored-password path passes the encrypted form back through)
+    password: encrypt(site.password || ''),
     // authType 'key' has a spot in the schema/UI but only 'password' is
-    // wired end-to-end right now.
+    // wired end-to-end right now; a stored key is encrypted like passwords.
     authType: site.authType === 'key' ? 'key' : 'password',
+    privateKey: site.privateKey ? encrypt(site.privateKey) : null,
     remoteDir: site.remoteDir || '/',
     localDir: site.localDir || '/',
     threads: site.threads ? Number(site.threads) : null,

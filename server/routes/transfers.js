@@ -2,6 +2,7 @@
 
 const express = require('express');
 const path = require('path');
+const { decrypt } = require('../secretStore');
 
 // Enqueue/list/cancel transfers. Each job runs as its own short-lived
 // lftp process (see transferManager); progress streams over WebSocket.
@@ -31,9 +32,15 @@ module.exports = function transfersRouter(transferManager, sitesStore, LOCAL_ROO
       return res.status(400).json({ error: 'localPath escapes local root' });
     }
 
+    let password;
+    try {
+      password = decrypt(site.password); // in memory only, for the lftp process
+    } catch (err) {
+      return res.status(err.status || 409).json({ error: err.message, code: err.code });
+    }
     const job = transferManager.enqueue({
       direction,
-      site,
+      site: { ...site, password },
       remotePath,
       localPath: absLocal,
       size: Number(size) || 0,
