@@ -33,6 +33,8 @@ try {
 const secretStore = require('./secretStore');
 secretStore.init(CONFIG_DIR);
 
+require('./perfModel').init(CONFIG_DIR); // adaptive segment-count learner store
+
 const sitesStore = new JsonStore(path.join(CONFIG_DIR, 'sites.json'), { sites: [] });
 
 // One-time migration: encrypt any plaintext credentials from older
@@ -59,6 +61,7 @@ const sitesStore = new JsonStore(path.join(CONFIG_DIR, 'sites.json'), { sites: [
 }
 const settingsStore = new JsonStore(path.join(CONFIG_DIR, 'settings.json'), {
   theme: 'amber',
+  autoSegments: true,
   threads: 2,
   segments: 4,
   segmentMinBytes: 1024 * 1024,

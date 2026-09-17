@@ -333,7 +333,7 @@ function renderJob(job) {
   el.innerHTML =
     `<span class="dir-arrow">${arrow}${job.isDir ? '&#128193;' : ''}</span>` +
     `<span class="job-name" title="${escapeHtml(job.remotePath)}">${nameLabel}</span>` +
-    `<div class="segbar">${segHtml}</div>` +
+    `<div class="segbar" title="${job.autoSegments ? `adaptive: ${segs} connection${segs === 1 ? '' : 's'}${job.explore ? ' (trying a new value)' : ''}` : `${segs} connection${segs === 1 ? '' : 's'}`}">${segHtml}</div>` +
     `<span class="job-pct">${pct}</span>` +
     `<span class="job-speed">${job.speed || ''}</span>` +
     `<span class="job-eta">${job.eta ? 'eta ' + job.eta : ''}</span>` +
@@ -538,10 +538,19 @@ function applyTheme(theme) {
   try { localStorage.setItem('plxTheme', t); } catch (_) { /* private mode etc. */ }
 }
 
+function syncSegmentsFieldState() {
+  // fixed segments input is only meaningful when auto is off
+  const auto = $('st-autoseg').checked;
+  $('st-segments').disabled = auto;
+  $('st-segments').style.opacity = auto ? '0.4' : '';
+}
+
 async function loadSettings() {
   state.settings = await api('/settings');
   applyTheme(state.settings.theme);
   $('st-theme').value = ['green', 'blue'].includes(state.settings.theme) ? state.settings.theme : 'amber';
+  $('st-autoseg').checked = state.settings.autoSegments !== false;
+  syncSegmentsFieldState();
   $('st-threads').value = state.settings.threads;
   $('st-segments').value = state.settings.segments;
   $('st-segmentMin').value = (state.settings.segmentMinBytes / (1024 * 1024)).toString();
@@ -555,6 +564,7 @@ async function saveSettings(e) {
       method: 'PUT',
       body: {
         theme: $('st-theme').value,
+        autoSegments: $('st-autoseg').checked,
         threads: Number($('st-threads').value),
         segments: Number($('st-segments').value),
         segmentMinBytes: Math.round(Number($('st-segmentMin').value) * 1024 * 1024),
@@ -657,6 +667,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (site) connectSite(site);
   };
   $('settings-form').onsubmit = saveSettings;
+  $('st-autoseg').onchange = syncSegmentsFieldState;
   $('btn-disconnect').onclick = disconnect;
   $('btn-download').onclick = () => startTransfer('download');
   $('btn-upload').onclick = () => startTransfer('upload');

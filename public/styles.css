@@ -407,6 +407,8 @@ body {
 }
 .site-form input:focus, .site-form select:focus { outline: none; border-color: var(--accent-dim); }
 .site-form .row { display: flex; gap: 10px; }
+.site-form label.row-inline { flex-direction: row; align-items: center; gap: 8px; }
+.site-form label.row-inline input { width: auto; }
 .site-form .grow { flex: 1; }
 .site-form .w-port { width: 80px; }
 .site-form .w-proto { width: 90px; }
