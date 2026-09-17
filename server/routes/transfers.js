@@ -24,6 +24,11 @@ module.exports = function transfersRouter(transferManager, sitesStore, LOCAL_ROO
     const site = sitesStore.read().sites.find((s) => s.id === siteId);
     if (!site) return res.status(404).json({ error: 'site not found' });
 
+    // HTTP/HTTPS directory listings are read-only (no PUT); downloads only.
+    if (direction === 'upload' && (site.protocol === 'http' || site.protocol === 'https')) {
+      return res.status(400).json({ error: 'uploads are not supported over HTTP/HTTPS' });
+    }
+
     // Local side is virtual (relative to LOCAL_ROOT), same sandbox rule
     // as the local browsing routes.
     const rel = String(localPath).replace(/^\/+/, '');

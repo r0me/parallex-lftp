@@ -8,7 +8,8 @@ what's still open.
 
 A FileZilla-style dual-pane file browser that runs as a web app in Docker,
 using `lftp` as the actual transfer engine (not a hand-rolled FTP client).
-Supports FTP, FTPS, and SFTP — lftp handles all three natively. Includes a
+Supports FTP, FTPS, SFTP, and HTTP/HTTPS (password-protected Apache/nginx
+directory listings) — lftp handles them all natively. Includes a
 Site Manager (saved connection profiles) and a Settings panel for
 transfer tuning (thread count, parallel segments per file, bandwidth cap).
 
@@ -74,6 +75,19 @@ Key gotchas learned the hard way:
   credential-carrying stdin back into the output stream.
 - **lftp has no `pput`** (only `pget` exists). Segmented transfers are
   download-only; single-file uploads always use plain `put`.
+- **HTTP/HTTPS (Apache/nginx autoindex)**: lftp browses by parsing the
+  directory HTML, so metadata is patchy and server-dependent. `list()`
+  therefore issues two commands and merges: `cls -1 --classify` for
+  reliable names + dir/file (trailing `/`), then `cls -l` best-effort for
+  size/date matched by name (`_listHttp` in `lftpSession.js`). HTTP
+  "last modified" is minute-resolution, so `CLS_LINE_RE` makes seconds
+  optional. Segments cap raised to **20** (`pget -n`); Range requests make
+  it work over HTTP, and since the listing may not give us a size, HTTP
+  downloads segment **regardless of `segmentMinBytes`** (lftp learns the
+  size via HEAD/Range). Empty username → `open` without `-u` (public dir;
+  avoid sending empty Basic auth). Uploads are blocked for http/https
+  (read-only). Per-site `verifyTls:false` sets `ssl:verify-certificate no`
+  for self-signed https/ftps. 401/403/404 are in `ERROR_PATTERNS`.
 - **Folders** transfer with `mirror` (recursive), `mirror -R` for upload,
   `--parallel=<threads>` across files plus `--use-pget-n=<segments>` per
   file on download. mirror emits per-file meters, not one aggregate, so
@@ -136,10 +150,12 @@ parallex-lftp/
   screen or env seed; logout button; see the auth decision row)
 - Dual-pane browsing (local via Node `fs`, remote via persistent lftp
   session) with clickable breadcrumb navigation
-- Site Manager: create/edit/delete saved sites (name, host, port, protocol,
-  username/password, remote/local initial directories, optional per-site
-  threads/segments override). Passwords are never echoed back to the
-  client (`hasPassword` flag instead; empty password on edit = keep stored)
+- Site Manager: create/edit/delete saved sites (name, host, port, protocol
+  ftp/ftps/sftp/http/https, username/password, remote/local initial
+  directories, optional per-site threads/segments override, `verifyTls`
+  toggle for self-signed https/ftps). Passwords are never echoed back to
+  the client (`hasPassword` flag instead; empty password on edit = keep
+  stored)
 - Global Settings: thread count, segments-per-file, minimum file size
   before segmenting kicks in, optional bandwidth cap
 - Themes: Rack Amber (default), Retro Green (black/green phosphor), Deep

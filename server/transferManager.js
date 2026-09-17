@@ -71,8 +71,12 @@ class TransferManager extends EventEmitter {
       size,
       // folders use mirror (its own --parallel/--use-pget-n); only a single
       // file download segments. lftp has no pput, so uploads never segment.
+      // Over HTTP we may not know the size from the listing, but pget learns
+      // it via a Range/HEAD request — so segment regardless of our size gate.
       segments:
-        !isDir && direction === 'download' && size >= effective.segmentMinBytes
+        !isDir && direction === 'download' &&
+        (size >= effective.segmentMinBytes ||
+          site.protocol === 'http' || site.protocol === 'https')
           ? effective.segments
           : 1,
       effective,
@@ -116,8 +120,11 @@ class TransferManager extends EventEmitter {
     job.startedAt = Date.now();
 
     const site = job._site;
-    const scheme = { ftp: 'ftp', ftps: 'ftp', sftp: 'sftp' }[site.protocol] || 'ftp';
+    const scheme =
+      { ftp: 'ftp', ftps: 'ftp', sftp: 'sftp', http: 'http', https: 'https' }[site.protocol] || 'ftp';
     const url = `${scheme}://${site.host}${site.port ? `:${site.port}` : ''}`;
+    const isHttp = site.protocol === 'http' || site.protocol === 'https';
+    const hasCreds = isHttp ? Boolean(site.username) : true; // HTTP anon = no -u
     const user = site.username || 'anonymous';
     const pass = site.password || '';
 
@@ -141,6 +148,12 @@ class TransferManager extends EventEmitter {
         'set sftp:size-write 131072',
         'set sftp:max-packets-in-flight 64'
       );
+    }
+    if (isHttp) {
+      settingsCmds.push('set http:cache no', 'set hftp:cache no');
+    }
+    if ((site.protocol === 'ftps' || site.protocol === 'https') && site.verifyTls === false) {
+      settingsCmds.push('set ssl:verify-certificate no');
     }
     if (job.effective.bandwidthLimitKBps > 0) {
       settingsCmds.push(`set net:limit-rate ${job.effective.bandwidthLimitKBps * 1024}`);
@@ -170,10 +183,13 @@ class TransferManager extends EventEmitter {
       xfer = `put ${quote(job.localPath)} -o ${quote(job.remotePath)}`;
     }
 
+    const openCmd = hasCreds
+      ? `open -u ${quote(user)},${quote(pass)} ${quote(url)}`
+      : `open ${quote(url)}`;
     const script = [
       ...settingsCmds,
       // Credentials over stdin, never CLI args (keeps them out of `ps`).
-      `open -u ${quote(user)},${quote(pass)} ${quote(url)}`,
+      openCmd,
       xfer,
       'exit',
     ].join('\n');

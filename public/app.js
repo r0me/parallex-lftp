@@ -485,6 +485,7 @@ function fillSiteForm(site) {
   $('sf-localDir').value = site ? site.localDir : '';
   $('sf-threads').value = site && site.threads ? site.threads : '';
   $('sf-segments').value = site && site.segments ? site.segments : '';
+  $('sf-verifyTls').checked = site ? site.verifyTls !== false : true;
   $('btn-site-connect').hidden = !site;
   $('btn-site-delete').hidden = !site;
 }
@@ -504,6 +505,7 @@ async function saveSite(e) {
     localDir: $('sf-localDir').value.trim() || '/',
     threads: $('sf-threads').value ? Number($('sf-threads').value) : null,
     segments: $('sf-segments').value ? Number($('sf-segments').value) : null,
+    verifyTls: $('sf-verifyTls').checked,
   };
   try {
     const saved = id

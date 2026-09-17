@@ -25,7 +25,11 @@ const ERROR_PATTERNS = [
   { re: /connection reset/i, code: 'CONN', message: 'Connection reset by server' },
   { re: /could not resolve|name or service not known|unknown host/i, code: 'DNS', message: 'Could not resolve hostname' },
   { re: /timed? ?out/i, code: 'TIMEOUT', message: 'Operation timed out' },
-  { re: /certificate verification/i, code: 'TLS', message: 'TLS certificate verification failed' },
+  { re: /certificate verification|certificate common name|self.signed certificate/i, code: 'TLS', message: 'TLS certificate verification failed (try "ignore TLS errors" for self-signed)' },
+  // HTTP status errors (Apache/nginx over http/https)
+  { re: /\b401\b|unauthorized/i, code: 'AUTH', message: 'Authentication required (HTTP 401) — check username/password' },
+  { re: /\b403\b|forbidden/i, code: 'PERM', message: 'Access forbidden (HTTP 403)' },
+  { re: /\b404\b|not found/i, code: 'NOTFOUND', message: 'Not found (HTTP 404)' },
   { re: /fatal error/i, code: 'FATAL', message: 'lftp fatal error' },
   { re: /operation not supported/i, code: 'UNSUPPORTED', message: 'Operation not supported by server' },
   { re: /file already exists/i, code: 'EXISTS', message: 'File already exists' },
@@ -73,8 +77,13 @@ class LftpSession extends EventEmitter {
 
   url() {
     const { protocol, host, port } = this.site;
-    const scheme = { ftp: 'ftp', ftps: 'ftp', sftp: 'sftp' }[protocol] || 'ftp';
+    const scheme =
+      { ftp: 'ftp', ftps: 'ftp', sftp: 'sftp', http: 'http', https: 'https' }[protocol] || 'ftp';
     return `${scheme}://${host}${port ? `:${port}` : ''}`;
+  }
+
+  get isHttp() {
+    return this.site.protocol === 'http' || this.site.protocol === 'https';
   }
 
   async connect() {
@@ -126,16 +135,32 @@ class LftpSession extends EventEmitter {
         'set sftp:max-packets-in-flight 64'
       );
     }
+    if (this.isHttp) {
+      // Apache/nginx autoindex: parse the HTML directory listing. Cache off
+      // so re-listing after a transfer reflects reality.
+      setup.push('set http:cache no', 'set hftp:cache no');
+    }
+    // ftps and https honor a per-site "ignore TLS errors" toggle (self-signed)
+    if ((site.protocol === 'ftps' || site.protocol === 'https') && site.verifyTls === false) {
+      setup.push('set ssl:verify-certificate no');
+    }
     for (const cmd of setup) await this.exec(cmd);
 
     // Credentials go over stdin via `open -u`, never as CLI args, so they
-    // never appear in `ps` output.
+    // never appear in `ps` output. For HTTP an empty username means a public
+    // directory — open without -u so we don't send an empty Basic auth
+    // header (which a protected dir would 401 and a public one may reject).
+    const hasCreds = this.isHttp ? Boolean(site.username) : true;
     const user = site.username || 'anonymous';
     const pass = site.password || '';
-    const openOut = await this.exec(
-      `open -u ${quote(user)},${quote(pass)} ${quote(this.url())}`,
-      { redactInLog: `open -u ${quote(user)},***** ${quote(this.url())}` }
-    );
+    const openCmd = hasCreds
+      ? `open -u ${quote(user)},${quote(pass)} ${quote(this.url())}`
+      : `open ${quote(this.url())}`;
+    const openOut = await this.exec(openCmd, {
+      redactInLog: hasCreds
+        ? `open -u ${quote(user)},***** ${quote(this.url())}`
+        : `open ${quote(this.url())}`,
+    });
     let err = detectLftpError(openOut);
     if (err) throw sessionError(err);
 
@@ -222,10 +247,35 @@ class LftpSession extends EventEmitter {
   // ---- high-level operations -------------------------------------------
 
   async list(dir = '.') {
+    if (this.isHttp) return this._listHttp(dir);
     const out = await this.exec(clsCommand(dir), { timeout: 60_000 });
     const err = detectLftpError(out);
     if (err) throw sessionError(err);
     return parseClsOutput(out);
+  }
+
+  // HTTP/HTTPS: lftp synthesizes the listing from the Apache/nginx autoindex
+  // HTML, and how much metadata survives varies by server. Get the reliable
+  // part (names + dir/file, via a trailing '/' from --classify) first, then
+  // best-effort enrich size/date from a long listing matched by name — so a
+  // sparse index still browses even when sizes are missing.
+  async _listHttp(dir) {
+    const namesOut = await this.exec(`cls -1 --classify ${quote(dir)}`, { timeout: 60_000 });
+    const err = detectLftpError(namesOut);
+    if (err) throw sessionError(err);
+    const base = parseClassifyOutput(namesOut);
+
+    let meta = [];
+    try {
+      const longOut = await this.exec(clsCommand(dir), { timeout: 60_000 });
+      if (!detectLftpError(longOut)) meta = parseClsOutput(longOut);
+    } catch (_) { /* enrichment is best-effort */ }
+    const byName = new Map(meta.map((e) => [e.name, e]));
+    for (const e of base) {
+      const m = byName.get(e.name);
+      if (m) { e.size = m.size; e.mtime = m.mtime; }
+    }
+    return base;
   }
 
   async chdir(dir) {
@@ -282,8 +332,31 @@ function clsCommand(dir) {
 }
 
 // Matches: -rw-r--r-- 1 user group 12345 2024-01-31 12:34:56 name
+// Seconds are optional — HTTP autoindex "last modified" is often minute-
+// resolution (2024-01-31 12:34), and lftp passes that through.
 const CLS_LINE_RE =
-  /^([\-dlbcps])([rwxstST\-]{9})\s+(?:\d+\s+)?(?:\S+\s+\S+\s+)?(\d+)\s+(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+(.+)$/;
+  /^([\-dlbcps])([rwxstST\-]{9})\s+(?:\d+\s+)?(?:\S+\s+\S+\s+)?(\d+)\s+(\d{4}-\d{2}-\d{2} \d{2}:\d{2}(?::\d{2})?)\s+(.+)$/;
+
+// Parse `cls -1 --classify`: one name per line, directories marked with a
+// trailing '/', other classifiers (*/@/=|) stripped. The most reliable way
+// to read an HTTP autoindex, where full ls-style metadata may be absent.
+function parseClassifyOutput(out) {
+  const entries = [];
+  for (const raw of out.split('\n')) {
+    let name = raw.replace(/\r$/, '').trim();
+    if (!name) continue;
+    if (/^(total\s|cls:|ls:)/i.test(name)) continue; // noise
+    let type = 'file';
+    if (name.endsWith('/')) { type = 'dir'; name = name.replace(/\/+$/, ''); }
+    else if (/[*@=|]$/.test(name)) name = name.slice(0, -1); // exec/link/socket/fifo
+    if (!name || name === '.' || name === '..') continue;
+    entries.push({ name, type, permissions: null, size: 0, mtime: null, linkTarget: null });
+  }
+  entries.sort((a, b) =>
+    a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'dir' ? -1 : 1
+  );
+  return entries;
+}
 
 function parseClsOutput(out) {
   const entries = [];
@@ -365,4 +438,4 @@ function sessionError(err) {
   return e;
 }
 
-module.exports = { LftpSession, detectLftpError, ERROR_PATTERNS, parseClsOutput, quote, clsCommand };
+module.exports = { LftpSession, detectLftpError, ERROR_PATTERNS, parseClsOutput, parseClassifyOutput, quote, clsCommand };

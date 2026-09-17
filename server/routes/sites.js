@@ -69,8 +69,10 @@ function normalize(site) {
     name: String(site.name),
     host: String(site.host),
     port: site.port ? Number(site.port) : null,
-    protocol: ['ftp', 'ftps', 'sftp'].includes(site.protocol) ? site.protocol : 'ftp',
+    protocol: ['ftp', 'ftps', 'sftp', 'http', 'https'].includes(site.protocol) ? site.protocol : 'ftp',
     username: site.username || '',
+    // for https/ftps: false = skip TLS cert verification (self-signed homelab)
+    verifyTls: site.verifyTls === false ? false : true,
     // encrypt() is a no-op on empty and on already-encrypted values (the
     // keep-stored-password path passes the encrypted form back through)
     password: encrypt(site.password || ''),

@@ -2,8 +2,9 @@
 total AI slop, but it works and is free. uploading is fucked but that is not what this is for lol.  
 A dual-pane file browser that runs as a web app in Docker,
 using [`lftp`](https://lftp.yar.ru/) as the transfer engine. Supports
-**FTP, FTPS, and SFTP**, with real parallel segmented downloads via lftp's
-native `pget -n <segments>`.
+**FTP, FTPS, SFTP, and HTTP/HTTPS** (password-protected Apache/nginx
+directory listings), with real parallel segmented downloads via lftp's
+native `pget -n <segments>` (up to 20 parts per file).
 
 ![Dual-pane browsing with a segmented download and a folder transfer in progress](docs/screenshots/main.png)
 
@@ -16,9 +17,13 @@ native `pget -n <segments>`.
   overrides), stored in `config/sites.json`
 - **Transfer settings** — concurrent transfer count, segments per file,
   minimum file size before segmenting kicks in, optional bandwidth cap
+- **HTTP/HTTPS directory downloads** — browse and download from
+  password-protected Apache/nginx autoindex listings (HTTP Basic auth),
+  including recursive folder downloads. Read-only (no upload); a per-site
+  "ignore TLS errors" toggle handles self-signed HTTPS
 - **Segmented parallel downloads** — large downloads use `pget -n
-  <segments>` for multi-connection transfers (uploads use plain `put`;
-  lftp has no segmented upload for a single file)
+  <segments>` for multi-connection transfers, up to **20 parts per file**
+  (uploads use plain `put`; lftp has no segmented upload for a single file)
 - **Folder transfers** — select a directory and download/upload the whole
   tree recursively (`mirror`), with parallel files and live progress on
   folder downloads, including the current file and a running file count
